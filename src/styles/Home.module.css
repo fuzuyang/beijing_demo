@@ -1,0 +1,141 @@
+.container {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.welcomeSection {
+  margin-bottom: 40px;
+}
+
+.welcomeTitle {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 8px 0;
+  color: #333;
+}
+
+.welcomeSubtitle {
+  font-size: 16px;
+  color: #666;
+  margin: 0;
+}
+
+.featuresGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  margin-bottom: 40px;
+}
+
+.featureCard {
+  background-color: #fff;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  padding: 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.09);
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.featureCard:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.cardIcon {
+  font-size: 32px;
+  margin-bottom: 16px;
+  padding: 12px;
+  border-radius: 8px;
+  display: inline-block;
+}
+
+.cardIcon.blue {
+  background-color: #e6f7ff;
+}
+
+.cardIcon.green {
+  background-color: #f6ffed;
+}
+
+.cardIcon.purple {
+  background-color: #f9f0ff;
+}
+
+.cardTitle {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 12px 0;
+  color: #333;
+}
+
+.cardDescription {
+  font-size: 14px;
+  color: #666;
+  margin: 0 0 20px 0;
+  line-height: 1.5;
+}
+
+.startBtn {
+  font-size: 14px;
+  color: #1890ff;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.startBtn:hover {
+  text-decoration: underline;
+}
+
+.systemFeatures {
+  background-color: #fafafa;
+  padding: 32px;
+  border-radius: 8px;
+}
+
+.systemFeaturesTitle {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 24px 0;
+  color: #333;
+}
+
+.featuresList {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 24px;
+}
+
+.featureItem {
+  
+}
+
+.featureItemTitle {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 8px 0;
+  color: #333;
+}
+
+.featureItemDescription {
+  font-size: 14px;
+  color: #666;
+  margin: 0;
+  line-height: 1.5;
+}
+
+@media (max-width: 1024px) {
+  .featuresGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .featuresGrid {
+    grid-template-columns: 1fr;
+  }
+  
+  .featuresList {
+    grid-template-columns: 1fr;
+  }
+}

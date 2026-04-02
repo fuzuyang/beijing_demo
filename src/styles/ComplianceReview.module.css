@@ -1,0 +1,92 @@
+.container {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0;
+}
+
+.title {
+  margin: 0 0 12px 0;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
+.subtitle {
+  margin: 0 0 24px 0;
+  color: #666;
+  font-size: 14px;
+}
+
+.formContainer {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 24px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.leftPanel {
+  flex: 1;
+  background-color: #fafafa;
+  padding: 20px;
+  border-radius: 8px;
+  box-sizing: border-box;
+}
+
+.formSection {
+  margin-bottom: 20px;
+}
+
+.sectionTitle {
+  margin: 0 0 16px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+}
+
+.formActions {
+  margin-top: 24px;
+  display: flex;
+  gap: 12px;
+}
+
+.rightPanel {
+  flex: 2;
+  min-width: 500px;
+}
+
+.quickExamples {
+  margin-top: 24px;
+  padding: 16px;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+}
+
+.exampleTags {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tag {
+  padding: 8px 16px;
+  background-color: #f0f0f0;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+@media (max-width: 768px) {
+  .formContainer {
+    flex-direction: column;
+  }
+  
+  .leftPanel,
+  .rightPanel {
+    width: 100%;
+  }
+  
+  .rightPanel {
+    min-width: auto;
+  }
+}

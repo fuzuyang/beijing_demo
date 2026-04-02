@@ -1,0 +1,400 @@
+.container {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* 动画效果 */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.fadeIn {
+  animation: fadeIn 0.6s ease-out forwards;
+}
+
+.slideIn {
+  animation: slideIn 0.5s ease-out forwards;
+}
+
+.pulse {
+  animation: pulse 2s infinite;
+}
+
+.mainLayout {
+  margin-top: 40px;
+  display: flex;
+  gap: 24px;
+  width: 100%;
+  min-height: 700px;
+  box-sizing: border-box;
+}
+
+.leftSectionInitial {
+  flex: 1;
+  min-height: 300px;
+}
+
+.rightSectionInitial {
+  flex: 3;
+  min-height: 600px;
+}
+
+.largeIcon {
+  font-size: 64px !important;
+  margin-bottom: 24px !important;
+}
+
+.leftSection {
+  flex: 1;
+  padding: 24px;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  background-color: #fafafa;
+  margin-right: 12px;
+}
+
+.rightSection {
+  flex: 2;
+  padding: 24px;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  background-color: #fafafa;
+  margin-left: 12px;
+}
+
+.uploadSection {
+  margin-bottom: 24px;
+  padding: 16px;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  background-color: #fff;
+}
+
+.sectionTitle {
+  margin: 0 0 16px 0;
+  font-size: 16px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stepNumber {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background-color: #1890ff;
+  color: #fff;
+  text-align: center;
+  line-height: 20px;
+  font-size: 12px;
+}
+
+.successIcon {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background-color: #52c41a;
+  color: #fff;
+  text-align: center;
+  line-height: 20px;
+  font-size: 12px;
+}
+
+.uploadArea {
+  border: 2px dashed #d9d9d9;
+  border-radius: 4px;
+  padding: 32px;
+  text-align: center;
+  margin-bottom: 16px;
+}
+
+.uploadComponent {
+  margin-bottom: 16px;
+}
+
+.uploadIcon {
+  font-size: 32px;
+  margin-bottom: 12px;
+}
+
+.uploadText {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  color: #333;
+}
+
+.uploadHint {
+  margin: 0;
+  font-size: 12px;
+  color: #999;
+}
+
+.uploadHintMargin {
+  margin: 8px 0 0 0;
+  font-size: 12px;
+  color: #999;
+}
+
+.fileList {
+  padding: 12px;
+  background-color: #fafafa;
+  border-radius: 4px;
+  margin-bottom: 16px;
+}
+
+.fileListTitle {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.fileItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background-color: #fff;
+  border: 1px solid #e8e8e8;
+  border-radius: 4px;
+}
+
+.fileInfo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fileName {
+  margin: 0;
+  font-size: 14px;
+  color: #333;
+}
+
+.fileSize {
+  margin: 4px 0 0 0;
+  font-size: 12px;
+  color: #999;
+}
+
+.removeButton {
+  background: none;
+  border: none;
+  font-size: 16px;
+  color: #999;
+  cursor: pointer;
+}
+
+.resultSection {
+  padding: 16px;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  background-color: #fff;
+}
+
+.resultGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.resultItem {
+  padding: 12px;
+  background-color: #fafafa;
+  border-radius: 4px;
+}
+
+.resultItemFull {
+  padding: 12px;
+  background-color: #fafafa;
+  border-radius: 4px;
+  grid-column: span 2;
+}
+
+.resultLabel {
+  margin: 0 0 4px 0;
+  font-size: 14px;
+  color: #666;
+}
+
+.resultValue {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+}
+
+.flowchartHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.flowchartTitle {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.exportButton {
+  padding: 6px 12px;
+  background-color: #666;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.flowchartContainer {
+  padding: 24px;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  background-color: #fff;
+  min-height: 400px;
+  position: relative;
+}
+
+.flowchartContent {
+  position: relative;
+  width: 100%;
+  height: 350px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.flowchartDiagram {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+
+.flowNode {
+  padding: 12px 24px;
+  border-radius: 20px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.flowNodeStart {
+  background-color: #52c41a;
+}
+
+.flowNodeProcess {
+  background-color: #1890ff;
+}
+
+.flowNodeDecision {
+  background-color: #fa8c16;
+}
+
+.flowNodeEnd {
+  background-color: #f5222d;
+}
+
+.flowLine {
+  width: 2px;
+  height: 24px;
+  background-color: #999;
+}
+
+.legend {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  padding: 12px;
+  background-color: #fafafa;
+  border: 1px solid #e8e8e8;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.legendTitle {
+  margin: 0 0 8px 0;
+  font-weight: 600;
+}
+
+.legendItems {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.legendColor {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.legendColorStart {
+  background-color: #52c41a;
+}
+
+.legendColorProcess {
+  background-color: #1890ff;
+}
+
+.legendColorDecision {
+  background-color: #fa8c16;
+}
+
+.legendColorEnd {
+  background-color: #f5222d;
+}
