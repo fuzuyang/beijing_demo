@@ -47,6 +47,9 @@ const InternalDraft = () => {
   const userScrolledRef = useRef(false);
   const scrollTimeoutRef = useRef(null);
   
+  // 保存滚动位置的ref
+  const scrollPositionRef = useRef(0);
+  
   // 加载步骤
   const steps = [
     "正在解析文档要素",
@@ -137,6 +140,12 @@ const InternalDraft = () => {
 
   // 批量更新文本的函数 - 直接更新，不延迟
   const appendTextBatch = useCallback((newDelta) => {
+    // 保存当前滚动位置
+    const container = streamingContentRef.current;
+    if (container) {
+      scrollPositionRef.current = container.scrollTop;
+    }
+    
     setStreamingText(prev => prev + newDelta);
   }, []);
 
@@ -415,19 +424,15 @@ const InternalDraft = () => {
   }, []);
 
   // 保存和恢复滚动位置，防止滚动条跳到顶部
-  const scrollPositionRef = useRef(0);
   useEffect(() => {
     const container = streamingContentRef.current;
     if (container) {
-      // 保存当前滚动位置
-      scrollPositionRef.current = container.scrollTop;
-      
-      // 在下一个事件循环中恢复滚动位置
-      setTimeout(() => {
+      // 使用requestAnimationFrame确保在DOM更新完成后再恢复滚动位置
+      requestAnimationFrame(() => {
         if (container) {
           container.scrollTop = scrollPositionRef.current;
         }
-      }, 0);
+      });
     }
   }, [streamingText]);
 
@@ -660,19 +665,18 @@ const InternalDraft = () => {
                 ))}
               </div>
             </div>
-          ) : isSubmitting ? (
-            // 实时生成文本显示区域
-            <div style={{ minHeight: "600px", height: "auto", position: "relative" }}>
+          ) : (
+            isSubmitting ? (
+              // 实时生成文本显示区域
               <div
                 ref={streamingContentRef}
                 style={{
                   backgroundColor: "#f5f5f5",
                   padding: "16px",
                   borderRadius: "4px",
-                  height: "600px",
-                  overflowY: "auto",
-                  position: "relative",
-                  scrollBehavior: "auto"
+                  minHeight: "600px",
+                  height: "auto",
+                  position: "relative"
                 }}
               >
                 {streamingText && streamingText.length > 0 ? (
@@ -680,68 +684,68 @@ const InternalDraft = () => {
                 ) : (
                   loadingElement
                 )}
+                
+                {/* 滚动到底部按钮 */}
+                {showScrollButton && (
+                  <button
+                    onClick={scrollToBottomManually}
+                    style={{
+                      position: "absolute",
+                      bottom: "20px",
+                      right: "20px",
+                      width: "40px",
+                      height: "40px",
+                      borderRadius: "20px",
+                      backgroundColor: "#1890ff",
+                      color: "white",
+                      border: "none",
+                      cursor: "pointer",
+                      boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+                      zIndex: 1000,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "20px",
+                      transition: "all 0.3s ease"
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = "#40a9ff";
+                      e.currentTarget.style.transform = "scale(1.05)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = "#1890ff";
+                      e.currentTarget.style.transform = "scale(1)";
+                    }}
+                  >
+                    ↓
+                  </button>
+                )}
               </div>
-              
-              {/* 滚动到底部按钮 */}
-              {showScrollButton && (
-                <button
-                  onClick={scrollToBottomManually}
-                  style={{
-                    position: "absolute",
-                    bottom: "20px",
-                    right: "20px",
-                    width: "40px",
-                    height: "40px",
-                    borderRadius: "20px",
-                    backgroundColor: "#1890ff",
-                    color: "white",
-                    border: "none",
-                    cursor: "pointer",
-                    boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-                    zIndex: 1000,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: "20px",
-                    transition: "all 0.3s ease"
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = "#40a9ff";
-                    e.currentTarget.style.transform = "scale(1.05)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = "#1890ff";
-                    e.currentTarget.style.transform = "scale(1)";
-                  }}
-                >
-                  ↓
-                </button>
-              )}
-            </div>
-          ) : (
-            // 空状态显示
-            <div className={styles.previewArea}>
-              {(leftFiles.length > 0) && selectedTemplate ? (
-                <div className={styles.previewContent}>
-                  <h4>预览内容</h4>
-                  <p>已上传 {leftFiles.length} 个文件</p>
-                  <p>选择的模板：{getTemplateName(selectedTemplate)}</p>
-                  <p className={styles.previewHint}>
-                    点击生成文档按钮后，生成的内容将在此处显示
-                  </p>
-                </div>
-              ) : (
-                <>
-                  <div className={styles.previewIcon}>📄</div>
-                  <p className={styles.previewText}>
-                    上传文件并选择模板后，点击生成按钮
-                  </p>
-                  <p className={styles.previewSubtext}>
-                    生成的文档将在此处显示
-                  </p>
-                </>
-              )}
-            </div>
+            ) : (
+              // 空状态显示
+              <div className={styles.previewArea}>
+                {(leftFiles.length > 0) && selectedTemplate ? (
+                  <div className={styles.previewContent}>
+                    <h4>预览内容</h4>
+                    <p>已上传 {leftFiles.length} 个文件</p>
+                    <p>选择的模板：{getTemplateName(selectedTemplate)}</p>
+                    <p className={styles.previewHint}>
+                      点击生成文档按钮后，生成的内容将在此处显示
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <div className={styles.previewIcon}>📄</div>
+                    <p className={styles.previewText}>
+                      上传文件并选择模板后，点击生成按钮
+                    </p>
+                    <p className={styles.previewSubtext}>
+                      生成的文档将在此处显示
+                    </p>
+                  </>
+                )}
+              </div>
+            )
           )}
         </div>
       </div>
