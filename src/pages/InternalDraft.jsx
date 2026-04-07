@@ -6,6 +6,7 @@ const InternalDraft = () => {
   // 状态管理
   const [leftFiles, setLeftFiles] = useState([]);
   const [selectedTemplate, setSelectedTemplate] = useState("");
+  const [fileType, setFileType] = useState(""); // 用户传入的文件类型
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [streamingText, setStreamingText] = useState("");
   const [generatedDocument, setGeneratedDocument] = useState(null);
@@ -157,14 +158,18 @@ const InternalDraft = () => {
       return;
     }
 
+    if (!fileType) {
+      setErrorMessage("请选择文件类型");
+      setTimeout(() => setErrorMessage(""), 3000);
+      return;
+    }
+
     const expectedTemplate = templateMapping[selectedTemplate];
     if (!expectedTemplate) {
       setErrorMessage("无效的模板类型");
       setTimeout(() => setErrorMessage(""), 3000);
       return;
     }
-
-    const fileType = "1";
 
     setIsSubmitting(true);
     setStreamingText("");
@@ -209,7 +214,7 @@ const InternalDraft = () => {
     } finally {
       abortControllerRef.current = null;
     }
-  }, [leftFiles, selectedTemplate, handleSSEResponse]);
+  }, [leftFiles, selectedTemplate, fileType, handleSSEResponse]);
 
   // 重置表单 - 只重置上传文件和模板选择，保留生成的文档
   const handleReset = useCallback(() => {
@@ -218,6 +223,7 @@ const InternalDraft = () => {
     }
     setLeftFiles([]);
     setSelectedTemplate("");
+    setFileType(""); // 重置文件类型
     setStreamingText("");
     setErrorMessage("");
     setIsSubmitting(false); // 重置提交状态
@@ -346,11 +352,31 @@ const InternalDraft = () => {
             </div>
           </div>
 
+          <div className={styles.templateCard}>
+            <h3 className={styles.cardTitle}>文件类型</h3>
+            <div className={styles.selectWrapper}>
+              <select
+                className={styles.templateSelect}
+                value={fileType}
+                onChange={(e) => setFileType(e.target.value)}
+                disabled={isSubmitting}
+              >
+                <option value="">请选择文件类型</option>
+                <option value="1">律师意见书</option>
+                <option value="2">起诉状</option>
+              </select>
+              <span className={styles.selectArrow}>▼</span>
+            </div>
+          </div>
+
           <div className={styles.buttonGroup}>
             <button
               className={styles.generateBtn}
               disabled={
-                isSubmitting || leftFiles.length === 0 || !selectedTemplate
+                isSubmitting ||
+                leftFiles.length === 0 ||
+                !selectedTemplate ||
+                !fileType
               }
               onClick={handleGenerate}
             >
@@ -378,21 +404,57 @@ const InternalDraft = () => {
                     className={`${styles.actionBtn} ${styles.downloadBtn}`}
                     onClick={handleDownload}
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      strokeWidth="1.5"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"
+                      />
+                    </svg>
                     下载文档
                   </button>
                   <button
                     className={`${styles.actionBtn} ${styles.newDocumentBtnAlt}`}
                     onClick={handleNewDocument}
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v6m3-3H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      strokeWidth="1.5"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M12 9v6m3-3H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
                     新建文档
                   </button>
                   <button
                     className={`${styles.actionBtn} ${styles.resetBtnAlt}`}
                     onClick={handleReset}
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0011.664 0l3.18-3.185m-3.18-3.182v4.992m0 0h-4.992m4.992 0l-3.182-3.182a8.25 8.25 0 00-11.664 0l-3.18 3.185" /></svg>
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      strokeWidth="1.5"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0011.664 0l3.18-3.185m-3.18-3.182v4.992m0 0h-4.992m4.992 0l-3.182-3.182a8.25 8.25 0 00-11.664 0l-3.18 3.185"
+                      />
+                    </svg>
                     重新上传
                   </button>
                 </div>
