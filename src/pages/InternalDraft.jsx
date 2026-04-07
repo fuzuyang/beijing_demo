@@ -1,520 +1,265 @@
-// 导入 React 库，特别是 useState 和 useEffect 钩子，用于在函数组件中管理状态和副作用
-import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
-// 导入此组件专用的 CSS 模块，用于样式化
+import React, { useState, useRef, useCallback } from "react";
 import styles from "../styles/InternalDraft.module.css";
-// 导入一个可重用的标题组件
 import TitleWithDescription from "../components/TitleWithDescription";
 
-// 定义 InternalDraft 组件，这是一个函数式组件
 const InternalDraft = () => {
-  // --- 状态管理 (State Management) ---
-  // 上传的文件列表
+  // 状态管理
   const [leftFiles, setLeftFiles] = useState([]);
-  // 用户选择的文档模板
   const [selectedTemplate, setSelectedTemplate] = useState("");
-  // 标记当前是否正在向后端提交数据（用于禁用按钮，防止重复提交）
   const [isSubmitting, setIsSubmitting] = useState(false);
-  // 显示给用户的消息（如"生成中..."、"上传成功"等）
-  const [message, setMessage] = useState("");
-  // 保存从后端接收到的已生成文档的数据
-  const [generatedDocument, setGeneratedDocument] = useState(null);
-  // 当前加载步骤索引
-  const [loadingStep, setLoadingStep] = useState(0);
-  // 实时生成的文本
   const [streamingText, setStreamingText] = useState("");
-  // 显示滚动到底部按钮
-  const [showScrollButton, setShowScrollButton] = useState(false);
-  
-  // 用于跟踪组件是否仍然挂载的ref
-  const isMountedRef = useRef(true);
-  
-  // 用于滚动容器的ref
-  const streamingContentRef = useRef(null);
-  
-  // 记录上次文本长度，用于检测新内容
-  const lastTextLengthRef = useRef(0);
-  
-  // 使用ref来跟踪streamingText的最新值
-  const streamingTextRef = useRef("");
-  
-  // 用于批量收集待显示的文本
-  const pendingTextRef = useRef("");
-  const updatePendingRef = useRef(false);
-  const animationFrameRef = useRef(null);
-  
-  // 滚动控制相关的refs
-  const isUserNearBottomRef = useRef(true);
-  const userScrolledRef = useRef(false);
-  const scrollTimeoutRef = useRef(null);
-  
-  // 保存滚动位置的ref
-  const scrollPositionRef = useRef(0);
-  
-  // 加载步骤
-  const steps = [
-    "正在解析文档要素",
-    "正在生成文档模板",
-    "正在优化内容",
-    "文档生成完成"
-  ];
-  
-  // 组件卸载时清理
-  useEffect(() => {
-    return () => {
-      isMountedRef.current = false;
-      // 清理动画帧
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-      // 清理滚动定时器
-      if (scrollTimeoutRef.current) {
-        clearTimeout(scrollTimeoutRef.current);
-      }
-    };
-  }, []);
+  const [generatedDocument, setGeneratedDocument] = useState(null);
+  const [errorMessage, setErrorMessage] = useState("");
 
-  // 监听用户滚动事件
-  useEffect(() => {
-    const container = streamingContentRef.current;
-    if (!container) return;
+  const fileInputRef = useRef(null);
+  const streamingTextRef = useRef(""); // 用于实时跟踪流式文本
+  const abortControllerRef = useRef(null);
+  const isProcessingRef = useRef(false); // 标记是否正在处理 SSE 事件
 
-    const handleScroll = () => {
-      const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-      const nearBottom = distanceToBottom < 100;
-      isUserNearBottomRef.current = nearBottom;
-      
-      // 控制按钮显示（距离底部超过200px时显示）
-      setShowScrollButton(distanceToBottom > 200);
-      
-      // 清除之前的定时器
-      if (scrollTimeoutRef.current) {
-        clearTimeout(scrollTimeoutRef.current);
-      }
-      
-      // 用户停止滚动后，判断用户意图
-      scrollTimeoutRef.current = setTimeout(() => {
-        if (!nearBottom) {
-          // 用户向上滚动离开底部，标记为用户主动滚动
-          userScrolledRef.current = true;
-        } else {
-          // 用户滚回底部，重置用户意图标志
-          userScrolledRef.current = false;
-        }
-      }, 150);
-    };
+  // 模板类型映射 (前端值 -> 后端值)
+  const templateMapping = {
+    case_report: "1",
+    case_litigation_plan: "2",
+    hire_external_lawyer: "3",
+  };
 
-    container.addEventListener('scroll', handleScroll);
-    return () => {
-      container.removeEventListener('scroll', handleScroll);
-      if (scrollTimeoutRef.current) {
-        clearTimeout(scrollTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  // 智能滚动到底部函数 - 已禁用自动滚动
-  const smartScrollToBottom = useCallback(() => {
-    // 自动滚动已禁用，用户需要手动滚动
-    return;
-  }, []);
-
-  // 手动滚动到底部
-  const scrollToBottomManually = useCallback(() => {
-    if (streamingContentRef.current) {
-      streamingContentRef.current.scrollTo({
-        top: streamingContentRef.current.scrollHeight,
-        behavior: 'smooth'
-      });
-      // 重置用户滚动状态
-      userScrolledRef.current = false;
-      isUserNearBottomRef.current = true;
+  // 处理文件选择
+  const handleFileChange = useCallback((e) => {
+    const files = Array.from(e.target.files);
+    // 只保留 PDF 文件
+    const pdfFiles = files.filter((file) => file.type === "application/pdf");
+    if (pdfFiles.length !== files.length) {
+      setErrorMessage("仅支持 PDF 格式文件");
+      setTimeout(() => setErrorMessage(""), 3000);
     }
+    setLeftFiles((prev) => [...prev, ...pdfFiles]);
   }, []);
 
-  // 重置用户滚动状态
-  const resetUserScrollState = useCallback(() => {
-    userScrolledRef.current = false;
-    isUserNearBottomRef.current = true;
-    setShowScrollButton(false);
+  // 删除文件
+  const handleRemoveFile = useCallback((index) => {
+    setLeftFiles((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
-  // 批量更新文本的函数 - 直接更新，不延迟
-  const appendTextBatch = useCallback((newDelta) => {
-    // 保存当前滚动位置
-    const container = streamingContentRef.current;
-    if (container) {
-      scrollPositionRef.current = container.scrollTop;
-    }
-    
-    setStreamingText(prev => prev + newDelta);
-  }, []);
-
-  // 处理SSE响应
-  const handleSSE = useCallback((response) => {
-    return new Promise((resolve, reject) => {
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let resultData = null;
-      let isResolved = false;
-
-      // 后端真实进度阶段映射
-      const stageStepMap = { start: 0, generate: 1, evaluate: 2, complete: 3 };
-
-      const processChunk = async ({ done, value }) => {
-        if (done) {
-          if (!isResolved && isMountedRef.current) {
-            if (resultData) {
-              resolve(resultData);
-            } else {
-              reject(new Error("No result received from server"));
-            }
-          }
-          return;
-        }
-
-        buffer += decoder.decode(value, { stream: true });
-
-        // 处理SSE事件
-        const lines = buffer.split("\n");
-        buffer = lines.pop();
-
-        let eventType = "message";
-
-        for (const line of lines) {
-          if (line.startsWith("event: ")) {
-            eventType = line.substring(7).trim();
-          } else if (line.startsWith("data: ")) {
-            const dataStr = line.substring(6).trim();
-            try {
-              const data = JSON.parse(dataStr);
-
-              if (eventType === "token") {
-                // 使用批量更新
-                appendTextBatch(data.delta);
-                console.log("收到SSE token事件:", data);
-              } else if (eventType === "status") {
-                const step = stageStepMap[data.stage];
-                if (step !== undefined && isMountedRef.current) {
-                  setLoadingStep(step);
-                }
-              } else if (eventType === "result") {
-                resultData = data;
-                if (isMountedRef.current) {
-                  setLoadingStep(3);
-                }
-                if (!isResolved) {
-                  isResolved = true;
-                  resolve(resultData);
-                }
-                return;
-              } else if (eventType === "error") {
-                if (!isResolved) {
-                  isResolved = true;
-                  reject(new Error(data.message || "Server error"));
-                }
-                return;
-              } else if (eventType === "done") {
-                resultData = data;
-                if (isMountedRef.current) {
-                  setLoadingStep(3);
-                }
-                if (!isResolved) {
-                  isResolved = true;
-                  resolve(resultData);
-                }
-                return;
-              }
-            } catch (e) {
-              console.error("Error parsing SSE data:", e);
-            }
-          }
-        }
-
-        reader.read().then(processChunk).catch(reject);
-      };
-
-      reader.read().then(processChunk).catch(reject);
-    });
-  }, [appendTextBatch]);
-
-  // --- 核心功能：生成文档 ---
-  const handleGenerateDocument = useCallback(async () => {
-    // 验证：确保用户已上传文件并选择了模板
-    if (leftFiles.length === 0 || !selectedTemplate) {
-      setMessage("请上传文件并选择模板");
-      return;
-    }
-
-    // 验证文件类型，仅支持PDF
-    for (const file of leftFiles) {
-      if (!file.name.toLowerCase().endsWith('.pdf')) {
-        setMessage("仅支持PDF文件");
-        return;
-      }
-    }
-
-    // 重置所有状态
-    setIsSubmitting(true);
-    setMessage("");
-    setGeneratedDocument(null);
-    setStreamingText("");
-    streamingTextRef.current = "";
-    setLoadingStep(0);
-    lastTextLengthRef.current = 0;
-    updatePendingRef.current = false;
-    
-    // 重置滚动状态
-    resetUserScrollState();
-
-    // 兜底定时器
-    const stepInterval = setInterval(() => {
-      setLoadingStep((prev) => {
-        if (prev < steps.length - 1) {
-          return prev + 1;
-        }
-        return prev;
-      });
-    }, 2000);
-
-    try {
-      // 准备FormData
-      const formData = new FormData();
-      const file = leftFiles[0];
-      if (file) {
-        formData.append("file", file);
-      }
-      
-      const templateMap = {
-        case_report: "1",
-        lawsuit_request: "2",
-        external_lawyer: "3"
-      };
-      
-      formData.append("file_type", "1");
-      formData.append("expected_template", templateMap[selectedTemplate] || "1");
-
-      // 发送请求
-      const response = await fetch("/upload/document", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const contentType = response.headers.get('content-type');
-      let result;
-      
-      if (contentType && contentType.includes('text/event-stream')) {
-        result = await handleSSE(response);
-        console.log("后端返回的数据:", result);
-        clearInterval(stepInterval);
-        
-        let documentContent = "";
-        
-        if (result && (result.status || result.success)) {
-          documentContent = result.data?.generated_answer || streamingTextRef.current || "";
-          
-          const document = {
-            title: "生成的文档",
-            reportNumber: "DOC-" + Date.now(),
-            reportDate: new Date().toISOString().split('T')[0],
-            sections: [
-              {
-                title: "文档内容",
-                content: documentContent,
-                points: []
-              }
-            ]
-          };
-          
-          if (isMountedRef.current) {
-            setGeneratedDocument(document);
-            setMessage("文档生成成功！");
-            setLeftFiles([]);
-          }
-        } else {
-          if (isMountedRef.current) {
-            setMessage(result?.message || "生成文档失败");
-          }
-        }
-        
-        if (isMountedRef.current) {
-          setLoadingStep(3);
-          setIsSubmitting(false);
-        }
-      } else {
-        result = await response.json();
-        
-        if (isMountedRef.current) {
-          if (result.status || result.success) {
-            const document = {
-              title: "生成的文档",
-              reportNumber: "DOC-" + Date.now(),
-              reportDate: new Date().toISOString().split('T')[0],
-              sections: [
-                {
-                  title: "文档内容",
-                  content: result.data?.generated_answer || "",
-                  points: []
-                }
-              ]
-            };
-            setGeneratedDocument(document);
-            setLoadingStep(3);
-            setMessage("文档生成成功！");
-            setLeftFiles([]);
-          } else {
-            setMessage(result.message || "生成文档失败");
-            setLoadingStep(0);
-          }
-          setIsSubmitting(false);
-        }
-      }
-    } catch (error) {
-      if (isMountedRef.current) {
-        setMessage("生成文档失败，请重试");
-        setIsSubmitting(false);
-        setLoadingStep(0);
-      }
-      console.error("文档生成请求失败:", error);
-    } finally {
-      clearInterval(stepInterval);
-    }
-  }, [leftFiles, selectedTemplate, handleSSE, resetUserScrollState, steps.length]);
-
-  // 辅助函数：获取模板名称
-  const getTemplateName = useCallback((templateValue) => {
-    const templateMap = {
-      case_report: "案件报告",
-      lawsuit_request: "案件诉讼方案请示",
-      external_lawyer: "聘请外部律师的请示",
-      legal_opinion: "法律意见书",
-      contract_review: "合同审查报告",
-    };
-    return templateMap[templateValue] || templateValue;
-  }, []);
-
-  // 事件处理函数
-  const handleFileUpload = useCallback((e) => {
-    const uploadedFiles = Array.from(e.target.files);
-    setLeftFiles((prevFiles) => [...prevFiles, ...uploadedFiles]);
-  }, []);
-
+  // 处理拖拽上传
   const handleDragOver = useCallback((e) => {
     e.preventDefault();
   }, []);
 
-  const handleLeftDrop = useCallback((e) => {
+  const handleDrop = useCallback((e) => {
     e.preventDefault();
-    const droppedFiles = Array.from(e.dataTransfer.files);
-    setLeftFiles((prevFiles) => [...prevFiles, ...droppedFiles]);
-  }, []);
-
-  const handleRemoveLeftFile = useCallback((indexToRemove) => {
-    setLeftFiles((prevFiles) =>
-      prevFiles.filter((_, index) => index !== indexToRemove),
-    );
-  }, []);
-
-  const handleTemplateChange = useCallback((e) => {
-    setSelectedTemplate(e.target.value);
-  }, []);
-
-  // 保存和恢复滚动位置，防止滚动条跳到顶部
-  useEffect(() => {
-    const container = streamingContentRef.current;
-    if (container) {
-      // 使用requestAnimationFrame确保在DOM更新完成后再恢复滚动位置
-      requestAnimationFrame(() => {
-        if (container) {
-          container.scrollTop = scrollPositionRef.current;
-        }
-      });
+    const files = Array.from(e.dataTransfer.files);
+    const pdfFiles = files.filter((file) => file.type === "application/pdf");
+    if (pdfFiles.length !== files.length) {
+      setErrorMessage("仅支持 PDF 格式文件");
+      setTimeout(() => setErrorMessage(""), 3000);
     }
-  }, [streamingText]);
+    setLeftFiles((prev) => [...prev, ...pdfFiles]);
+  }, []);
 
-  // 使用 useMemo 缓存渲染结果
-  const streamingTextElement = useMemo(() => {
-    if (!streamingText || streamingText.length === 0) return null;
-    
-    return (
-      <div
-        key="streaming-text"
-        style={{
-          whiteSpace: "pre-wrap",
-          fontSize: "14px",
-          lineHeight: "1.6",
-          width: "100%",
-        }}
-      >
-        {streamingText}
-      </div>
-    );
-  }, [streamingText]);
+  // 处理 SSE 流式响应
+  const handleSSEResponse = useCallback(
+    async (response) => {
+      isProcessingRef.current = true;
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
 
-  const loadingElement = useMemo(() => (
-    <div
-      style={{
-        textAlign: "center",
-        animation: "fadeIn 0.5s ease-in",
-      }}
-    >
-      <div
-        style={{
-          display: "inline-block",
-          width: "40px",
-          height: "40px",
-          border: "4px solid #1890ff",
-          borderTop: "4px solid transparent",
-          borderRadius: "50%",
-          animation: "spin 1s linear infinite",
-          marginBottom: "20px",
-        }}
-      />
-      <div
-        style={{
-          fontSize: "24px",
-          fontWeight: "500",
-          color: "#000",
-          marginBottom: "30px",
-        }}
-      >
-        {steps[loadingStep] || "正在生成文档内容..."}
-      </div>
-      <div style={{ textAlign: "left", maxWidth: "400px", margin: "0 auto" }}>
-        {steps.map((step, index) => (
-          <p key={index} style={{ 
-            margin: "8px 0", 
-            fontSize: "14px",
-            color: index <= loadingStep ? "#1890ff" : "#999",
-            display: "flex",
-            alignItems: "center"
-          }}>
-            <span style={{ 
-              display: "inline-block", 
-              width: "20px", 
-              height: "20px", 
-              borderRadius: "50%", 
-              backgroundColor: index <= loadingStep ? "#1890ff" : "#e8e8e8",
-              color: "white",
-              textAlign: "center",
-              lineHeight: "20px",
-              fontSize: "12px",
-              marginRight: "12px"
-            }}>
-              {index === loadingStep ? "⏳" : index < loadingStep ? "✓" : "○"}
-            </span>
-            {step}
-          </p>
-        ))}
-      </div>
-    </div>
-  ), [loadingStep, steps]);
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-  // --- UI 渲染 ---
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            if (line.startsWith("event:")) continue;
+            if (line.startsWith("data:")) {
+              const dataStr = line.substring(5).trim();
+              if (!dataStr) continue;
+
+              try {
+                const data = JSON.parse(dataStr);
+                console.log("Received data:", data);
+
+                if (data.delta !== undefined && isProcessingRef.current) {
+                  // 只更新 ref，不更新状态，避免界面闪烁
+                  streamingTextRef.current += data.delta;
+                  // 异步更新状态，避免阻塞
+                  setStreamingText((prev) => prev + data.delta);
+                } else if (data.status === true && data.data) {
+                  console.log("Final result received");
+                  isProcessingRef.current = false;
+
+                  // 立即使用 ref 中的完整文本创建文档
+                  setGeneratedDocument({
+                    title: getTemplateName(selectedTemplate),
+                    content: streamingTextRef.current || "生成的内容为空",
+                    rowId: data.data.row_id,
+                    fileType: data.data.file_type,
+                    expectedTemplate: data.data.expected_template,
+                  });
+
+                  // 清空状态
+                  setStreamingText("");
+                  setIsSubmitting(false);
+                  return;
+                } else if (data.status === false && data.message) {
+                  throw new Error(data.message);
+                } else if (data.success !== undefined) {
+                  if (!data.success) {
+                    throw new Error("生成失败");
+                  } else {
+                    isProcessingRef.current = false;
+                    return;
+                  }
+                }
+              } catch (parseError) {
+                console.error("Parse error:", parseError, dataStr);
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error("SSE error:", error);
+        setErrorMessage("生成过程中发生错误");
+        setIsSubmitting(false);
+        isProcessingRef.current = false;
+      } finally {
+        reader.releaseLock();
+      }
+    },
+    [selectedTemplate],
+  );
+
+  // 获取模板显示名称
+  const getTemplateName = (templateValue) => {
+    const mapping = {
+      case_report: "案件报告",
+      case_litigation_plan: "案件诉讼方案请示",
+      hire_external_lawyer: "聘请外部律师请示",
+    };
+    return mapping[templateValue] || "生成的文档";
+  };
+
+  // 生成文档
+  const handleGenerate = useCallback(async () => {
+    if (leftFiles.length === 0) {
+      setErrorMessage("请先上传文件");
+      setTimeout(() => setErrorMessage(""), 3000);
+      return;
+    }
+
+    if (!selectedTemplate) {
+      setErrorMessage("请选择文档模板");
+      setTimeout(() => setErrorMessage(""), 3000);
+      return;
+    }
+
+    const expectedTemplate = templateMapping[selectedTemplate];
+    if (!expectedTemplate) {
+      setErrorMessage("无效的模板类型");
+      setTimeout(() => setErrorMessage(""), 3000);
+      return;
+    }
+
+    const fileType = "1";
+
+    setIsSubmitting(true);
+    setStreamingText("");
+    setGeneratedDocument(null);
+    setErrorMessage("");
+
+    const formData = new FormData();
+    formData.append("file", leftFiles[0]);
+    formData.append("file_type", fileType);
+    formData.append("expected_template", expectedTemplate);
+
+    abortControllerRef.current = new AbortController();
+    const timeoutId = setTimeout(() => {
+      abortControllerRef.current?.abort();
+    }, 120000);
+
+    try {
+      const response = await fetch("/upload/document", {
+        method: "POST",
+        body: formData,
+        signal: abortControllerRef.current.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      const contentType = response.headers.get("content-type") || "";
+
+      if (contentType.includes("text/event-stream")) {
+        await handleSSEResponse(response);
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "请求失败");
+      }
+    } catch (error) {
+      if (error.name === "AbortError") {
+        setErrorMessage("请求超时，请稍后重试");
+      } else {
+        setErrorMessage(error.message || "生成失败，请重试");
+      }
+      console.error("Generate error:", error);
+      setIsSubmitting(false); // 错误时也要结束提交状态
+    } finally {
+      abortControllerRef.current = null;
+    }
+  }, [leftFiles, selectedTemplate, handleSSEResponse]);
+
+  // 重置表单 - 只重置上传文件和模板选择，保留生成的文档
+  const handleReset = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    setLeftFiles([]);
+    setSelectedTemplate("");
+    setStreamingText("");
+    setErrorMessage("");
+    setIsSubmitting(false); // 重置提交状态
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }, []);
+
+  // 下载文档
+  const handleDownload = useCallback(() => {
+    if (!generatedDocument) return;
+
+    const textContent = generatedDocument.content;
+    const fileName = `${generatedDocument.title}.txt`;
+
+    const blob = new Blob([textContent], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [generatedDocument]);
+
+  // 新建文档 - 完全重置所有状态
+  const handleNewDocument = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    setLeftFiles([]);
+    setSelectedTemplate("");
+    setStreamingText("");
+    setGeneratedDocument(null);
+    setErrorMessage("");
+    setIsSubmitting(false);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }, []);
+
   return (
     <div className={styles.container}>
       <TitleWithDescription
@@ -522,236 +267,182 @@ const InternalDraft = () => {
         description="上传背景材料，选择模板，自动生成标准化审批文件"
       />
 
-      <div className={styles.mainContent}>
-        {/* 左侧区域 */}
-        <div className={styles.leftSection}>
-          {/* 文件上传部分 */}
-          <div className={styles.uploadSection}>
-            <h3 className={styles.uploadSectionTitle}>上传材料文档</h3>
-            <div className={styles.uploadContainer}>
-              <div className={styles.uploadAreaWrapper}>
-                <div
-                  className={styles.uploadArea}
-                  onDragOver={handleDragOver}
-                  onDrop={handleLeftDrop}
-                >
-                  <input
-                    type="file"
-                    multiple
-                    accept=".pdf,.doc,.docx,.txt"
-                    onChange={handleFileUpload}
-                    style={{ display: "none" }}
-                    id="file-upload"
-                  />
-                  <label
-                    htmlFor="file-upload"
-                    className={styles.uploadLabel}
-                  >
-                    <div className={styles.uploadIcon}>⬆</div>
-                    <p className={styles.uploadText}>
-                      点击上传或拖拽文件到此处
-                    </p>
-                    <p className={styles.uploadFormat}>
-                      支持 PDF, DOC, DOCX, TXT 等格式
-                    </p>
-                  </label>
-
-                  {leftFiles.length > 0 && (
-                    <div className={styles.fileList}>
-                      <h4>已上传文件：</h4>
-                      <ul>
-                        {leftFiles.map((file, index) => (
-                          <li key={index} className={styles.fileItem}>
-                            {file.name}
-                            <button
-                              className={styles.removeFileButton}
-                              onClick={() => handleRemoveLeftFile(index)}
-                            >
-                              ×
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* 模板选择部分 */}
-          <div className={styles.templateSection}>
-            <h3 className={styles.templateSectionTitle}>选择文档模板</h3>
-            <select
-              className={styles.selectTemplate}
-              value={selectedTemplate}
-              onChange={handleTemplateChange}
-            >
-              <option value="" disabled hidden>
-                请选择要生成的文档类型
-              </option>
-              <option value="case_report">案件报告</option>
-              <option value="lawsuit_request" disabled>
-                案件诉讼方案请示
-              </option>
-              <option value="external_lawyer" disabled>
-                聘请外部律师的请示
-              </option>
-              <option value="legal_opinion" disabled>
-                法律意见书
-              </option>
-              <option value="contract_review" disabled>
-                合同审查报告
-              </option>
-            </select>
-          </div>
-
-          {/* 生成按钮部分 */}
-          <div className={styles.generateSection}>
-            <button
-              className={styles.generateButton}
-              onClick={handleGenerateDocument}
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? "生成中..." : "📄 生成文档"}
-            </button>
-            {message && <p className={styles.message}>{message}</p>}
-          </div>
+      {errorMessage && (
+        <div className={styles.errorToast}>
+          <span>{errorMessage}</span>
+          <button onClick={() => setErrorMessage("")}>×</button>
         </div>
+      )}
 
-        {/* 右侧区域 - 文档预览 */}
-        <div className={styles.rightSection}>
-          <div className={styles.previewHeader}>
-            <h3 className={styles.previewSectionTitle}>文档预览</h3>
-            {generatedDocument && (
-              <button className={styles.downloadButton}>📥 下载文档</button>
-            )}
-          </div>
-
-          {generatedDocument ? (
-            <div className={styles.documentPreview}>
-              <h4 className={styles.documentTitle}>
-                {generatedDocument.title}
-              </h4>
-              <div className={styles.documentMeta}>
-                <p>报告编号: {generatedDocument.reportNumber}</p>
-                <p>报告日期: {generatedDocument.reportDate}</p>
+      <div className={styles.mainContent}>
+        <div className={styles.leftSection}>
+          <div className={styles.uploadCard}>
+            <h3 className={styles.cardTitle}>上传材料文档</h3>
+            <div
+              className={styles.uploadArea}
+              onClick={() => fileInputRef.current?.click()}
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf"
+                multiple
+                style={{ display: "none" }}
+                onChange={handleFileChange}
+              />
+              <div className={styles.uploadIcon}>
+                <svg
+                  viewBox="0 0 24 24"
+                  width="48"
+                  height="48"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                >
+                  <path d="M12 16V4m0 0l-4 4m4-4l4 4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" />
+                </svg>
               </div>
+              <p className={styles.uploadText}>点击上传或拖拽文件到此处</p>
+              <p className={styles.uploadHint}>仅支持 PDF 格式</p>
+            </div>
 
-              <div className={styles.documentContent}>
-                {generatedDocument.sections.map((section, index) => (
-                  <div key={index} className={styles.documentSection}>
-                    <h5 className={styles.sectionTitle}>{section.title}</h5>
-                    <p className={styles.sectionContent}>{section.content}</p>
-
-                    {section.points &&
-                      section.points.map((point, pointIndex) => (
-                        <div key={pointIndex} className={styles.sectionPoint}>
-                          {typeof point === "string" ? (
-                            <p>{point}</p>
-                          ) : (
-                            <>
-                              <p>{point.text}</p>
-                              <ul className={styles.subPoints}>
-                                {point.subPoints.map((subPoint, subIndex) => (
-                                  <li key={subIndex}>{subPoint}</li>
-                                ))}
-                              </ul>
-                            </>
-                          )}
-                        </div>
-                      ))}
+            {leftFiles.length > 0 && (
+              <div className={styles.fileList}>
+                {leftFiles.map((file, index) => (
+                  <div key={index} className={styles.fileItem}>
+                    <span className={styles.fileName} title={file.name}>
+                      {file.name}
+                    </span>
+                    <button
+                      className={styles.removeBtn}
+                      onClick={() => handleRemoveFile(index)}
+                      disabled={isSubmitting}
+                    >
+                      ×
+                    </button>
                   </div>
                 ))}
               </div>
-            </div>
-          ) : (
-            isSubmitting ? (
-              // 实时生成文本显示区域
-              <div
-                ref={streamingContentRef}
-                style={{
-                  backgroundColor: "#f5f5f5",
-                  padding: "16px",
-                  borderRadius: "4px",
-                  minHeight: "600px",
-                  height: "auto",
-                  position: "relative"
-                }}
+            )}
+          </div>
+
+          <div className={styles.templateCard}>
+            <h3 className={styles.cardTitle}>选择文档模板</h3>
+            <div className={styles.selectWrapper}>
+              <select
+                className={styles.templateSelect}
+                value={selectedTemplate}
+                onChange={(e) => setSelectedTemplate(e.target.value)}
+                disabled={isSubmitting}
               >
-                {streamingText && streamingText.length > 0 ? (
-                  streamingTextElement
-                ) : (
-                  loadingElement
-                )}
-                
-                {/* 滚动到底部按钮 */}
-                {showScrollButton && (
+                <option value="">请选择要生成的文档类型</option>
+                <option value="case_report">案件报告</option>
+                <option value="case_litigation_plan">案件诉讼方案请示</option>
+                <option value="hire_external_lawyer">聘请外部律师请示</option>
+              </select>
+              <span className={styles.selectArrow}>▼</span>
+            </div>
+          </div>
+
+          <div className={styles.buttonGroup}>
+            <button
+              className={styles.generateBtn}
+              disabled={
+                isSubmitting || leftFiles.length === 0 || !selectedTemplate
+              }
+              onClick={handleGenerate}
+            >
+              <svg
+                className={styles.btnIcon}
+                viewBox="0 0 24 24"
+                width="16"
+                height="16"
+                fill="currentColor"
+              >
+                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+              </svg>
+              {isSubmitting ? "生成中..." : "生成文档"}
+            </button>
+          </div>
+        </div>
+
+        <div className={styles.rightSection}>
+          <div className={styles.previewCard}>
+            <div className={styles.previewHeader}>
+              <h3 className={styles.cardTitle}>文档预览</h3>
+              {generatedDocument && (
+                <div className={styles.previewActions}>
                   <button
-                    onClick={scrollToBottomManually}
-                    style={{
-                      position: "absolute",
-                      bottom: "20px",
-                      right: "20px",
-                      width: "40px",
-                      height: "40px",
-                      borderRadius: "20px",
-                      backgroundColor: "#1890ff",
-                      color: "white",
-                      border: "none",
-                      cursor: "pointer",
-                      boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-                      zIndex: 1000,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: "20px",
-                      transition: "all 0.3s ease"
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = "#40a9ff";
-                      e.currentTarget.style.transform = "scale(1.05)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = "#1890ff";
-                      e.currentTarget.style.transform = "scale(1)";
-                    }}
+                    className={`${styles.actionBtn} ${styles.downloadBtn}`}
+                    onClick={handleDownload}
                   >
-                    ↓
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+                    下载文档
                   </button>
-                )}
-              </div>
-            ) : (
-              // 空状态显示
-              <div className={styles.previewArea}>
-                {(leftFiles.length > 0) && selectedTemplate ? (
-                  <div className={styles.previewContent}>
-                    <h4>预览内容</h4>
-                    <p>已上传 {leftFiles.length} 个文件</p>
-                    <p>选择的模板：{getTemplateName(selectedTemplate)}</p>
-                    <p className={styles.previewHint}>
-                      点击生成文档按钮后，生成的内容将在此处显示
-                    </p>
+                  <button
+                    className={`${styles.actionBtn} ${styles.newDocumentBtnAlt}`}
+                    onClick={handleNewDocument}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v6m3-3H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    新建文档
+                  </button>
+                  <button
+                    className={`${styles.actionBtn} ${styles.resetBtnAlt}`}
+                    onClick={handleReset}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0011.664 0l3.18-3.185m-3.18-3.182v4.992m0 0h-4.992m4.992 0l-3.182-3.182a8.25 8.25 0 00-11.664 0l-3.18 3.185" /></svg>
+                    重新上传
+                  </button>
+                </div>
+              )}
+            </div>
+            <div className={styles.previewContent}>
+              {generatedDocument ? (
+                <div className={styles.documentResult}>
+                  <h4>{generatedDocument.title}</h4>
+                  <div className={styles.documentBody}>
+                    {generatedDocument.content}
                   </div>
-                ) : (
-                  <>
-                    <div className={styles.previewIcon}>📄</div>
-                    <p className={styles.previewText}>
-                      上传文件并选择模板后，点击生成按钮
-                    </p>
-                    <p className={styles.previewSubtext}>
-                      生成的文档将在此处显示
-                    </p>
-                  </>
-                )}
-              </div>
-            )
-          )}
+                </div>
+              ) : isSubmitting ? (
+                <div className={styles.streamingArea}>
+                  <div className={styles.streamingText}>
+                    {streamingText || "正在生成文档内容..."}
+                  </div>
+                  {streamingText && <span className={styles.cursor}>|</span>}
+                </div>
+              ) : (
+                <div className={styles.emptyState}>
+                  <div className={styles.emptyIcon}>
+                    <svg
+                      viewBox="0 0 24 24"
+                      width="64"
+                      height="64"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1"
+                    >
+                      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                      <polyline points="14 2 14 8 20 8" />
+                      <line x1="16" y1="13" x2="8" y2="13" />
+                      <line x1="16" y1="17" x2="8" y2="17" />
+                      <polyline points="10 9 9 9 8 9" />
+                    </svg>
+                  </div>
+                  <p className={styles.emptyText}>
+                    上传文件并选择模板后，点击生成按钮
+                  </p>
+                  <p className={styles.emptyHint}>生成的文档将在此处显示</p>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>
   );
 };
 
-// 导出组件，使用 React.memo 优化性能
-export default React.memo(InternalDraft);
+export default InternalDraft;
