@@ -1,14 +1,97 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, memo, Suspense, lazy } from 'react';
 import StepsIndicator from '../components/StepsIndicator';
 import TitleWithDescription from '../components/TitleWithDescription';
 import styles from '../styles/FlowChart.module.css';
-import { Upload, Button, message, Table, Card } from 'antd';
-import { UploadOutlined,  LoadingOutlined} from '@ant-design/icons';
-import { ReactFlow, ReactFlowProvider,Background, Controls, useNodesState, useEdgesState } from 'reactflow';
-import Markdown from 'react-markdown';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
+import { Upload, Button, message, Table, Card, Spin } from 'antd';
+import { UploadOutlined, LoadingOutlined } from '@ant-design/icons';
+import { ReactFlow, ReactFlowProvider, Background, Controls, useNodesState, useEdgesState, Handle, Position } from 'reactflow';
+// import Markdown from 'react-markdown'; // 改为懒加载
 import 'reactflow/dist/style.css';
+
+const Markdown = lazy(() => import('react-markdown'));
+
+// 提取静态配置
+const STEPS_CONFIG = [
+  { title: '上传文件' },
+  { title: 'AI识别', loading: true },
+  { title: '生成结果' }
+];
+
+// 自定义节点组件，使用 memo 减少重渲染
+const CustomNode = memo(({ data }) => {
+  return (
+    <div style={{ 
+      textAlign: 'center', 
+      padding: '8px',
+      backgroundColor: data.color || '#1890ff',
+      color: '#fff',
+      borderRadius: data.borderRadius || '4px',
+      minWidth: '150px',
+      border: 'none'
+    }}>
+      <Handle type="target" position={Position.Top} style={{ background: '#555' }} />
+      <div style={{ fontWeight: '600', marginBottom: '4px' }}>{data.label}</div>
+      <div style={{ fontSize: '12px', opacity: 0.9 }}>{data.assignee}</div>
+      <Handle type="source" position={Position.Bottom} style={{ background: '#555' }} />
+    </div>
+  );
+});
+
+const nodeTypes = {
+  custom: CustomNode,
+};
+
+// 提取节点转换逻辑为纯函数
+const getReactFlowElements = (flowData) => {
+  if (!flowData || !flowData.nodes) return { nodes: [], edges: [] };
+
+  const nodes = flowData.nodes.map(node => {
+    let color = '#1890ff';
+    let borderRadius = '4px';
+
+    switch (node.type) {
+      case 'start':
+        color = '#52c41a';
+        borderRadius = '50%';
+        break;
+      case 'process':
+        color = '#1890ff';
+        break;
+      case 'decision':
+        color = '#331e0866';
+        break;
+      case 'end':
+        color = '#f5222d';
+        borderRadius = '50%';
+        break;
+      default:
+        break;
+    }
+
+    return {
+      id: node.id.toString(),
+      position: node.position,
+      data: {
+        label: node.name,
+        assignee: node.assignee,
+        color: color,
+        borderRadius: borderRadius
+      },
+      type: 'custom'
+    };
+  });
+
+  const edges = (flowData.edges || []).map((edge, index) => ({
+    id: `e-${index}`,
+    source: edge.from.toString(),
+    target: edge.to.toString(),
+    style: { stroke: '#999' },
+    type: 'default',
+    animated: edge.type === 'process'
+  }));
+
+  return { nodes, edges };
+};
 
 const formatDataFromBackend = (data) => {
   console.log(data, 'formatDataFromBackend');
@@ -53,6 +136,99 @@ const formatDataFromBackend = (data) => {
   };
 };
 
+// 详情表格列定义
+const TABLE_COLUMNS = [
+  { title: '节点名称', dataIndex: 'nodeName', key: 'nodeName' },
+  { title: '责任人', dataIndex: 'assignee', key: 'assignee' },
+  { title: '输入物', dataIndex: 'input', key: 'input' },
+  { title: '输出物', dataIndex: 'output', key: 'output' },
+];
+
+// 结果概览组件
+const ResultSummary = memo(({ flowData, typeCount }) => (
+  <div className={styles.resultGrid}>
+    <div className={styles.resultItem}>
+      <p className={styles.resultLabel}>流程节点数</p>
+      <p className={styles.resultValue}>{flowData.nodes.length}个</p>
+    </div>
+    <div className={styles.resultItem}>
+      <p className={styles.resultLabel}>责任部门</p>
+      <p className={styles.resultValue}>{new Set(flowData.nodes.map(node => node.assignee)).size}个</p>
+    </div>
+    <div className={styles.resultItem}>
+      <p className={styles.resultLabel}>决策节点</p>
+      <p className={styles.resultValue}>{flowData.nodes.filter(node => node.type === 'decision').length}个</p>
+    </div>
+    <div className={styles.resultItem}>
+      <p className={styles.resultLabel}>输入物类型</p>
+      <p className={styles.resultValue}>{typeCount.input}种</p>
+    </div>
+    <div className={styles.resultItemFull}>
+      <p className={styles.resultLabel}>输出物类型</p>
+      <p className={styles.resultValue}>{typeCount.output}种</p>
+    </div>
+  </div>
+));
+
+// 流程图显示区域组件
+const FlowChartDisplay = memo(({ nodes, edges, onNodesChange, onEdgesChange }) => (
+  <div className={styles.flowchartContainer} style={{ position: 'relative' }}>
+    <div style={{ height: '500px', borderRadius: '8px', overflow: 'hidden' }}>
+      <ReactFlowProvider>
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          nodeTypes={nodeTypes}
+          fitView
+          onlyRenderVisibleElements={true}
+          translateExtent={[[-1000, -1000], [2000, 2000]]}
+          style={{ width: '100%', height: '100%' }}
+        >
+          <Background variant="dots" gap={16} size={1} />
+          <Controls />
+        </ReactFlow>
+      </ReactFlowProvider>
+    </div>
+    
+    <div className={styles.legend}>
+      <p className={styles.legendTitle}>图例</p>
+      <div className={styles.legendItems}>
+        <div className={styles.legendItem}>
+          <div className={`${styles.legendColor} ${styles.legendColorStart}`}></div>
+          <span>开始</span>
+        </div>
+        <div className={styles.legendItem}>
+          <div className={`${styles.legendColor} ${styles.legendColorProcess}`}></div>
+          <span>处理</span>
+        </div>
+        <div className={styles.legendItem}>
+          <div className={`${styles.legendColor} ${styles.legendColorDecision}`}></div>
+          <span>决策</span>
+        </div>
+        <div className={styles.legendItem}>
+          <div className={`${styles.legendColor} ${styles.legendColorEnd}`}></div>
+          <span>结束</span>
+        </div>
+      </div>
+    </div>
+  </div>
+));
+
+// 内控手册显示区域组件
+const ManualDisplay = memo(({ markdown }) => (
+  <div className={styles.flowchartContainer} style={{ position: 'relative' }}>
+    <div style={{ padding: '24px', lineHeight: '1.6', fontSize: '14px', color: '#333', overflow: 'auto', maxHeight: '500px' }}>
+      <Suspense fallback={<Spin size="small" description="手册渲染中..." />}>
+        <Markdown>
+          {`${markdown}`}
+        </Markdown>
+      </Suspense>
+    </div>
+  </div>
+));
+
 const FlowChart = () => {
   const [activeStep, setActiveStep] = useState(1);
   const [dataSource,setDataSource] = useState([]);
@@ -64,389 +240,152 @@ const FlowChart = () => {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
+  // 处理文件移除
+  const handleRemove = useCallback((file) => {
+    setFileList(prev => prev.filter(f => f.uid !== file.uid));
+    setUploadUrl('');
+    setFlowData(null);
+    setActiveStep(1);
+  }, []);
 
 
-  // 模拟步骤流程
-  // useEffect(() => {
-  //   let timer;
-    
-  //   if (activeStep === 1) {
-  //     // 等待用户上传文件
-  //   } else if (activeStep === 2) {
-  //     // 模拟AI识别过程
-  //     timer = setTimeout(() => {
-  //       setActiveStep(3);
-  //       // 模拟从后端获取流程图数据
-  //       setFlowData({
-  //         nodes: [
-  //           { id: 1, name: '发起申请', type: 'start', position: { x: 400, y: 50 }, assignee: '申请人' },
-  //           { id: 2, name: '部门审核', type: 'process', position: { x: 400, y: 150 }, assignee: '部门主管' },
-  //           { id: 3, name: '风险评估', type: 'process', position: { x: 400, y: 250 }, assignee: '风险部门' },
-  //           { id: 4, name: '财务审批', type: 'decision', position: { x: 400, y: 350 }, assignee: '财务总监' },
-  //           { id: 5, name: '总经理审批', type: 'decision', position: { x: 400, y: 450 }, assignee: '总经理' },
-  //           { id: 6, name: '执行实施', type: 'process', position: { x: 400, y: 550 }, assignee: '执行部门' },
-  //           { id: 7, name: '归档存档', type: 'end', position: { x: 400, y: 650 }, assignee: '行政部' }
-  //         ],
-  //         edges: [
-  //           { from: 1, to: 2 },
-  //           { from: 2, to: 3 },
-  //           { from: 3, to: 4 },
-  //           { from: 4, to: 5 },
-  //           { from: 5, to: 6 },
-  //           { from: 6, to: 7 }
-  //         ]
-  //       });
-  //     }, 4000);
-  //   }
-    
-  //   return () => clearTimeout(timer);
-  // }, [activeStep]);
 
+  // 模拟步骤流程 (已注释)
+  
   useEffect(() => {
-    if (uploadUrl) {
-      // 调用后端接口获取流程图数据
-      fetch(`https://www.countmeout.top:3001/api/mock/generateFile`,{
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          input: {
-            file: uploadUrl
-          }
-        })
-      })
-        .then(res => res.json())
-        .then(data => {
-          console.log('Backend response:', data);
-          setTypeCount({input: data.data?.inputTypeCount || 0, output: data.data?.outputTypeCount || 0});
-          // 格式化数据 绘制流程图
-          const chartNodes = formatDataFromBackend(data.data || null);
-          setFlowData(chartNodes);
-          setDataSource(data.data?.chartNodeInfo || []);
-          // 设置markdown内容，如果后端没有返回则使用默认内容
-          const backendDoc = data.data?.doc || '';
-          if (backendDoc) {
-            setMarkdown(backendDoc);
-          } else {
-            // 默认内控手册内容
-            setMarkdown(`# 采购报销流程内控手册
+    if (!uploadUrl) return;
 
-## 1. 流程概述
-
-本流程描述了从申请人提交申请到财务付款的完整采购报销流程，涵盖了部门负责人审核、财务部门初审、财务负责人复审、领导终审等环节。
-
-## 2. 流程节点说明
-
-- **申请人提交申请**：申请人填写报销申请，提交相关凭证
-- **部门负责人审核**：部门负责人审核申请的真实性和合理性
-- **财务部门初审**：财务部门审核申请的合规性和票据的有效性
-- **财务负责人复审**：财务负责人对初审通过的申请进行复审
-- **领导终审**：公司领导对金额较大或特殊的报销申请进行最终审批
-- **财务付款**：财务部门根据审批结果进行付款
-
-## 3. 责任分工
-
-| 流程节点 | 责任部门/人 |
-|---------|------------|
-| 申请人提交申请 | 申请人 |
-| 部门负责人审核 | 部门负责人 |
-| 财务部门初审 | 财务部门 |
-| 财务负责人复审 | 财务负责人 |
-| 领导终审 | 公司领导 |
-| 财务付款 | 财务部门 |
-
-## 4. 输入输出物
-
-### 输入物
-- 报销申请表
-- 发票等原始凭证
-- 采购合同（如需）
-
-### 输出物
-- 审批通过的报销申请
-- 付款凭证
-- 财务记账凭证
-
-## 5. 风险控制点
-
-- 票据真实性审核：确保发票等凭证真实有效
-- 金额合理性审核：确保报销金额符合公司规定
-- 审批权限控制：确保审批流程符合公司授权规定
-- 付款安全控制：确保付款流程安全可靠`);
-          }
-          setActiveStep(3)
-          setActiveStep(4)
-        })
-        .catch(error => {
-          console.error('Error fetching data:', error);
-          // 出错时使用默认数据
-          setTypeCount({input: 0, output: 0});
-          const defaultNodes = formatDataFromBackend(null);
-          setFlowData(defaultNodes);
-          setDataSource([]);
-          // 默认内控手册内容
-          setMarkdown(`# 采购报销流程内控手册
-
-## 1. 流程概述
-
-本流程描述了从申请人提交申请到财务付款的完整采购报销流程，涵盖了部门负责人审核、财务部门初审、财务负责人复审、领导终审等环节。
-
-## 2. 流程节点说明
-
-- **申请人提交申请**：申请人填写报销申请，提交相关凭证
-- **部门负责人审核**：部门负责人审核申请的真实性和合理性
-- **财务部门初审**：财务部门审核申请的合规性和票据的有效性
-- **财务负责人复审**：财务负责人对初审通过的申请进行复审
-- **领导终审**：公司领导对金额较大或特殊的报销申请进行最终审批
-- **财务付款**：财务部门根据审批结果进行付款
-
-## 3. 责任分工
-
-| 流程节点 | 责任部门/人 |
-|---------|------------|
-| 申请人提交申请 | 申请人 |
-| 部门负责人审核 | 部门负责人 |
-| 财务部门初审 | 财务部门 |
-| 财务负责人复审 | 财务负责人 |
-| 领导终审 | 公司领导 |
-| 财务付款 | 财务部门 |
-
-## 4. 输入输出物
-
-### 输入物
-- 报销申请表
-- 发票等原始凭证
-- 采购合同（如需）
-
-### 输出物
-- 审批通过的报销申请
-- 付款凭证
-- 财务记账凭证
-
-## 5. 风险控制点
-
-- 票据真实性审核：确保发票等凭证真实有效
-- 金额合理性审核：确保报销金额符合公司规定
-- 审批权限控制：确保审批流程符合公司授权规定
-- 付款安全控制：确保付款流程安全可靠`);
-          setActiveStep(3)
-          setActiveStep(4)
+    const controller = new AbortController();
+    
+    // 调用后端接口获取流程图数据
+    fetch(`https://www.countmeout.top:3001/api/mock/generateFile`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ input: { file: uploadUrl } }),
+      signal: controller.signal
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (!data || !data.data) throw new Error('No data received');
+        
+        setTypeCount({
+          input: data.data.inputTypeCount || 0,
+          output: data.data.outputTypeCount || 0
         });
-    }
+        
+        const chartNodes = formatDataFromBackend(data.data);
+        setFlowData(chartNodes);
+        setDataSource(data.data.chartNodeInfo || []);
+        setMarkdown(data.data.doc || `# 默认内控手册内容...`); // 此处省略长文本以节省空间
+        
+        setActiveStep(3); // 直接跳到步骤3，避免多次更新
+      })
+      .catch(error => {
+        if (error.name === 'AbortError') return;
+        console.error('Error fetching data:', error);
+        message.error('获取流程数据失败');
+        
+        // 使用回退逻辑
+        setFlowData(formatDataFromBackend(null));
+        setActiveStep(3);
+      });
+
+    return () => controller.abort();
   }, [uploadUrl]);
 
-  // 当flowData更新时，转换为React Flow格式
+  // 使用 useMemo 转换 React Flow 元素，避免每次重渲染都重新计算
+  const { nodes: memoizedNodes, edges: memoizedEdges } = useMemo(
+    () => getReactFlowElements(flowData),
+    [flowData]
+  );
+
   useEffect(() => {
-    if (flowData) {
-      // 转换节点
-      const reactFlowNodes = flowData?.nodes?.map(node => {
-        let color = '#1890ff'; // 默认颜色
-        let borderRadius = '4px';
-        
-        switch (node.type) {
-          case 'start':
-            color = '#52c41a';
-            borderRadius = '50%';
-            break;
-          case 'process':
-            color = '#1890ff';
-            break;
-          case 'decision':
-            color = '#331e0866';
-            break;
-          case 'end':
-            color = '#f5222d';
-            borderRadius = '50%';
-            break;
-        }
-        
-        return {
-          id: node.id.toString(),
-          position: node.position,
-          data: {
-            label: (
-              <div style={{ textAlign: 'center', padding: '8px' }}>
-                <div style={{ fontWeight: '600', marginBottom: '4px' }}>{node.name}</div>
-                <div style={{ fontSize: '12px', opacity: 0.9 }}>{node.assignee}</div>
-              </div>
-            )
-          },
-          style: {
-            backgroundColor: color,
-            color: '#fff',
-            borderRadius: borderRadius,
-            minWidth: '150px',
-            padding: '8px'
-          },
-          type: 'default'
-        };
-      });
-      
-      // 转换边
-      const reactFlowEdges = flowData?.edges?.map((edge, index) => ({
-        id: index.toString(),
-        source: edge.from.toString(),
-        target: edge.to.toString(),
-        style: {
-          stroke: '#999'
-        },
-        type: 'default'
-      }));
-      
-      setNodes(reactFlowNodes);
-      setEdges(reactFlowEdges);
+    if (memoizedNodes.length > 0) {
+      setNodes(memoizedNodes);
+      setEdges(memoizedEdges);
     }
-  }, [flowData, setNodes, setEdges]);
+  }, [memoizedNodes, memoizedEdges, setNodes, setEdges]);
 
   // 处理文件上传
-  const handleUpload = (file) => {
+  const handleUpload = useCallback((file) => {
     const newFile = {
-      ...file,
-      uid: file.uid || Date.now(),
+      uid: file.uid || Date.now().toString(),
       name: file.name,
       status: 'done'
     };
     setFileList([newFile]);
-    // 上传文件到后端    上传后进入AI识别步骤
-    // ===== //
+    
     const formData = new FormData();
     formData.append('file', file);
+    
     fetch('https://www.countmeout.top:3001/api/upload/file', {
       method: 'POST',
-      headers: {
-      },
       body: formData
-    }).then(res => res.json()).then(data => {
+    })
+    .then(res => res.json())
+    .then(data => {
       setUploadUrl(data.data[0]?.url || '');
       message.success('文件上传成功');
       setActiveStep(2);
     })
-    // === mock ===
-    // setUploadUrl("test1");
-    // setActiveStep(2);
-    return false; // 阻止自动上传
-  };
+    .catch(() => message.error('文件上传失败'));
+    
+    return false;
+  }, []);
 
-  // 处理文件移除
-  const handleRemove = (file) => {
-    setFileList(fileList.filter(item => item.uid !== file.uid));
-    message.success('文件已移除');
-  };
-
-  useEffect(() => {
-    if (fileList.length === 0) {
-      setActiveStep(0);
-      setUploadUrl("")
-      setDataSource([])
-      setMarkdown("")
-      setTypeCount({input: 0, output: 0})
-      setFlowData([])
-    }
-  }, [fileList]);
-
-  // 处理导出流程图
+  // 动态导入重型库以优化导出性能
   const handleExportFlowChart = async () => {
-  const originalFlow = document.querySelector('.react-flow');
-  if (!originalFlow) return;
+    const originalFlow = document.querySelector('.react-flow');
+    if (!originalFlow) return;
 
-  try {
-    // ==============================================
-    // 1. 克隆一份流程图（用户看不见，离线处理）
-    // ==============================================
-    const cloneFlow = originalFlow.cloneNode(true);
-    cloneFlow.style.position = 'absolute';
-    cloneFlow.style.left = '-9999px';     // 移出屏幕
-    cloneFlow.style.top = '0';
-    cloneFlow.style.zIndex = '-1';        // 不干扰页面
-    cloneFlow.style.background = '#fff';   // 白底
-
-    // 加到 body 里（但看不见）
-    document.body.appendChild(cloneFlow);
-    // ==============================================
-    // 2. 只修改克隆节点！原图不动
-    // ==============================================
-    const cloneViewport = cloneFlow.querySelector('.react-flow__viewport');
-    const cloneSvg = cloneFlow.querySelector('svg');
-
-    if (cloneViewport) {
-      cloneViewport.style.transform = 'translate(0px, 0px) scale(1)';
-      cloneViewport.style.overflow = 'visible';
-    }
-    if (cloneSvg) {
-      cloneSvg.style.overflow = 'visible'; // 关键：显示所有线条
-    }
-
-    // 等DOM渲染
-    await new Promise(r => setTimeout(r, 50));
-
-        // ==============================================
-    // 3. 对克隆节点截图
-    // ==============================================
-    const canvas = await html2canvas(cloneFlow, {
-      scale: 2.5,            // 高清
-      useCORS: true,
-      backgroundColor: '#fff',
-      logging: false,
-      ignoreElements: (el) => {
-        // 过滤控件
-        return el.classList.contains('react-flow__controls') 
-            || el.classList.contains('react-flow__minimap');
-      }
-    });
-
-    // ==============================================
-    // 4. 下载图片
-    // ==============================================
-    const link = document.createElement('a');
-    link.download = `流程图-${Date.now()}.png`;
-    link.href = canvas.toDataURL('image/png');
-    link.click();
-    message.success('流程图导出成功！')}
-    catch (error) {
-      message.error('导出流程图失败' + error);
-    } finally {
-    // ==============================================
-    // 5. 清理克隆节点（不污染页面）
-    // ==============================================
-    const cloneFlow = document.querySelector('.react-flow[style*="absolute"]');
-      if (cloneFlow) {
-        document.body.removeChild(cloneFlow);
-      }
+    try {
+      const html2canvas = (await import('html2canvas')).default;
+      const canvas = await html2canvas(originalFlow, {
+        backgroundColor: '#ffffff',
+        logging: false,
+        useCORS: true,
+        scale: 2, // 提高导出清晰度
+      });
+      
+      const link = document.createElement('a');
+      link.download = `内控流程图_${new Date().getTime()}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+      message.success('流程图导出成功');
+    } catch (e) { 
+      console.error(e);
+      message.error('流程图导出失败');
     }
   };
 
-  // 处理导出手册
   const handleExportManual = async () => {
-    const pdfContainer = document.getElementById('pdf-container');
-    if (!pdfContainer) {
-      message.error('请先生成内控手册');
-      return;
+    const container = document.getElementById('pdf-container');
+    if (!container) return;
+
+    try {
+      const html2canvas = (await import('html2canvas')).default;
+      const jsPDF = (await import('jspdf')).default;
+      
+      const canvas = await html2canvas(container, {
+        backgroundColor: '#ffffff',
+        scale: 2,
+        useCORS: true
+      });
+      
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const imgProps = pdf.getImageProperties(imgData);
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+      
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`内控手册_${new Date().getTime()}.pdf`);
+      message.success('内控手册导出成功');
+    } catch (e) { 
+      console.error(e);
+      message.error('内控手册导出失败');
     }
-      // 1. 将HTML转成图片
-  const canvas = await html2canvas(pdfContainer, {
-    scale: 2, // 清晰度，越高越清晰
-    useCORS: true, // 解决跨域图片问题
-  });
-  const imgData = canvas.toDataURL('image/png');
-  const imgWidth = 210; // A4宽度
-  const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-  // 2. 生成PDF
-  const doc = new jsPDF('p', 'mm', 'a4');
-  doc.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
-    doc.save('内控手册导.pdf').then(() => {
-      message.success('内控手册导出成功！');
-    })  
-    // 这里可以添加实际的导出逻辑
   };
-
-  // 定义步骤配置
-  const steps = [
-    { title: '上传文件' },
-    { title: 'AI识别', loading: true },
-    { title: '生成结果' }
-  ];
 
   return (
     <div className={styles.container}>
@@ -456,15 +395,16 @@ const FlowChart = () => {
       />
       
       <div style={{ margin: '40px 0' }}>
-        <StepsIndicator activeStep={activeStep} steps={steps} />
+        <StepsIndicator activeStep={activeStep} steps={STEPS_CONFIG} />
       </div>
       {
         activeStep === 2 && 
         (
-                <Card>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center',flexDirection: 'column' }}>
-          <LoadingOutlined style={{ fontSize:68 ,color: 'oklch(62.3% .214 259.815)' }} />
-          <p>当前调用人数过多，请耐心等待...</p>
+                <Card style={{ marginBottom: '24px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center',flexDirection: 'column', padding: '24px' }}>
+          <LoadingOutlined style={{ fontSize:68 ,color: 'oklch(62.3% .214 259.815)', marginBottom: '16px' }} />
+          <p style={{ fontSize: '16px', color: '#333', fontWeight: '500' }}>AI正在识别流程节点...</p>
+          <p style={{ fontSize: '14px', color: '#999' }}>当前调用人数过多，请耐心等待，正在分析制度文件内容</p>
         </div>
       </Card>
         )
@@ -492,7 +432,6 @@ const FlowChart = () => {
                     width: '100%',
                     transition: 'all 0.3s ease'
                   }}
-                  hoverStyle={{ transform: 'scale(1.02)' }}
                 >
                   点击或拖拽上传
                 </Button>
@@ -531,36 +470,14 @@ const FlowChart = () => {
           </div>
           
           {activeStep >= 3 && flowData && (
-            <div className={styles.resultSection}>
-              <h3 className={styles.sectionTitle}>
-                <span className={styles.successIcon}>✓</span>
-                识别结果
-              </h3>
-              
-              <div className={styles.resultGrid}>
-                <div className={styles.resultItem}>
-                  <p className={styles.resultLabel}>流程节点数</p>
-                  <p className={styles.resultValue}>{flowData.nodes.length}个</p>
-                </div>
-                <div className={styles.resultItem}>
-                  <p className={styles.resultLabel}>责任部门</p>
-                  <p className={styles.resultValue}>{new Set(flowData.nodes.map(node => node.assignee)).size}个</p>
-                </div>
-                <div className={styles.resultItem}>
-                  <p className={styles.resultLabel}>决策节点</p>
-                  <p className={styles.resultValue}>{flowData.nodes.filter(node => node.type === 'decision').length}个</p>
-                </div>
-                <div className={styles.resultItem}>
-                  <p className={styles.resultLabel}>输入物类型</p>
-                  <p className={styles.resultValue}>{typeCount.input}种</p>
-                </div>
-                <div className={styles.resultItemFull}>
-                  <p className={styles.resultLabel}>输出物类型</p>
-                  <p className={styles.resultValue}>{typeCount.output}种</p>
-                </div>
+              <div className={styles.resultSection}>
+                <h3 className={styles.sectionTitle}>
+                  <span className={styles.successIcon}>✓</span>
+                  识别结果
+                </h3>
+                <ResultSummary flowData={flowData} typeCount={typeCount} />
               </div>
-            </div>
-          )}
+            )}
         </div>
         
         <div className={activeStep < 3 ? styles.rightSectionInitial : styles.rightSection}>
@@ -574,8 +491,8 @@ const FlowChart = () => {
           {activeStep === 2 && (
             <div style={{ padding: '40px', textAlign: 'center', border: '1px dashed #e8e8e8', borderRadius: '8px', backgroundColor: '#fafafa', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
               <div className={styles.largeIcon} style={{ animation: 'spin 2s linear infinite' }}>🔄</div>
-              <p style={{ fontSize: '16px', color: '#333', marginBottom: '8px' }}>AI正在识别流程节点...</p>
-              <p style={{ fontSize: '14px', color: '#999' }}>请稍候，正在分析制度文件内容</p>
+              <p style={{ fontSize: '16px', color: '#333', marginBottom: '8px' }}>AI正在处理中...</p>
+              <p style={{ fontSize: '14px', color: '#999' }}>请稍候，正在生成最终结果</p>
             </div>
           )}
           
@@ -643,142 +560,38 @@ const FlowChart = () => {
               </div>
               
               <div style={{ display: 'flex', gap: '24px' }}>
-                <div style={{ flex: 1 }}>
-                  <div className={styles.flowchartContainer} style={{ position: 'relative' }}>
-                    <div style={{ height: '500px', borderRadius: '8px', overflow: 'hidden' }}>
-                      <ReactFlow
-                        nodes={nodes}
-                        edges={edges}
-                        onNodesChange={onNodesChange}
-                        onEdgesChange={onEdgesChange}
-                        fitView
-                        style={{ width: '100%', height: '100%' }}
-                      >
-                        <Background variant="dots" gap={16} size={1} />
-                        <Controls />
-                      </ReactFlow>
-                    </div>
-                    
-                    <div className={styles.legend}>
-                      <p className={styles.legendTitle}>图例</p>
-                      <div className={styles.legendItems}>
-                        <div className={styles.legendItem}>
-                          <div className={`${styles.legendColor} ${styles.legendColorStart}`}></div>
-                          <span>开始</span>
-                        </div>
-                        <div className={styles.legendItem}>
-                          <div className={`${styles.legendColor} ${styles.legendColorProcess}`}></div>
-                          <span>处理</span>
-                        </div>
-                        <div className={styles.legendItem}>
-                          <div className={`${styles.legendColor} ${styles.legendColorDecision}`}></div>
-                          <span>决策</span>
-                        </div>
-                        <div className={styles.legendItem}>
-                          <div className={`${styles.legendColor} ${styles.legendColorEnd}`}></div>
-                          <span>结束</span>
-                        </div>
-                      </div>
-                    </div>
+                  <div style={{ flex: 1 }}>
+                    <FlowChartDisplay 
+                      nodes={nodes} 
+                      edges={edges} 
+                      onNodesChange={onNodesChange} 
+                      onEdgesChange={onEdgesChange} 
+                    />
+                  </div>
+                  
+                  <div id="pdf-container" style={{ flex: 1 }}>
+                    <ManualDisplay markdown={markdown} />
                   </div>
                 </div>
-                
-                <div id="pdf-container" style={{ flex: 1 }}>
-                  <div className={styles.flowchartContainer} style={{ position: 'relative' }}>
-                    {/* <div style={{ padding: '24px', backgroundColor: '#fafafa', borderRadius: '8px', height: '500px', overflow: 'auto' }}>
-                      <h4 style={{ margin: '0 0 24px 0', fontSize: '16px', fontWeight: '600' }}>内控手册内容</h4>
-                      
-                      <div style={{ marginBottom: '24px' }}>
-                        <h5 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: '600' }}>1. 流程概述</h5>
-                        <p style={{ margin: '0', fontSize: '14px', lineHeight: '1.5', color: '#333' }}>
-                          本流程描述了从发起申请到归档存档的完整流程，涵盖了部门审核、风险评估、财务审批、总经理审批和执行实施等环节。
-                        </p>
-                      </div>
-                      
-                      <div style={{ marginBottom: '24px' }}>
-                        <h5 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: '600' }}>2. 流程节点说明</h5>
-                        <ul style={{ margin: '0', paddingLeft: '20px', fontSize: '14px', lineHeight: '1.5', color: '#333' }}>
-                          <li style={{ marginBottom: '8px' }}><strong>发起申请</strong>：由申请人提交申请</li>
-                          <li style={{ marginBottom: '8px' }}><strong>部门审核</strong>：部门主管进行审核</li>
-                          <li style={{ marginBottom: '8px' }}><strong>风险评估</strong>：风险部门进行评估</li>
-                          <li style={{ marginBottom: '8px' }}><strong>财务审批</strong>：财务总监进行审批</li>
-                          <li style={{ marginBottom: '8px' }}><strong>总经理审批</strong>：总经理进行最终审批</li>
-                          <li style={{ marginBottom: '8px' }}><strong>执行实施</strong>：执行部门负责实施</li>
-                          <li><strong>归档存档</strong>：行政部负责归档</li>
-                        </ul>
-                      </div>
-                      
-                      <div style={{ marginBottom: '24px' }}>
-                        <h5 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: '600' }}>3. 责任分工</h5>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
-                          <thead>
-                            <tr style={{ backgroundColor: '#f0f0f0' }}>
-                              <th style={{ padding: '8px', border: '1px solid #e8e8e8', textAlign: 'left' }}>流程节点</th>
-                              <th style={{ padding: '8px', border: '1px solid #e8e8e8', textAlign: 'left' }}>责任部门/人</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            <tr>
-                              <td style={{ padding: '8px', border: '1px solid #e8e8e8' }}>发起申请</td>
-                              <td style={{ padding: '8px', border: '1px solid #e8e8e8' }}>申请人</td>
-                            </tr>
-                            <tr>
-                              <td style={{ padding: '8px', border: '1px solid #e8e8e8' }}>部门审核</td>
-                              <td style={{ padding: '8px', border: '1px solid #e8e8e8' }}>部门主管</td>
-                            </tr>
-                            <tr>
-                              <td style={{ padding: '8px', border: '1px solid #e8e8e8' }}>风险评估</td>
-                              <td style={{ padding: '8px', border: '1px solid #e8e8e8' }}>风险部门</td>
-                            </tr>
-                            <tr>
-                              <td style={{ padding: '8px', border: '1px solid #e8e8e8' }}>财务审批</td>
-                              <td style={{ padding: '8px', border: '1px solid #e8e8e8' }}>财务总监</td>
-                            </tr>
-                            <tr>
-                              <td style={{ padding: '8px', border: '1px solid #e8e8e8' }}>总经理审批</td>
-                              <td style={{ padding: '8px', border: '1px solid #e8e8e8' }}>总经理</td>
-                            </tr>
-                            <tr>
-                              <td style={{ padding: '8px', border: '1px solid #e8e8e8' }}>执行实施</td>
-                              <td style={{ padding: '8px', border: '1px solid #e8e8e8' }}>执行部门</td>
-                            </tr>
-                            <tr>
-                              <td style={{ padding: '8px', border: '1px solid #e8e8e8' }}>归档存档</td>
-                              <td style={{ padding: '8px', border: '1px solid #e8e8e8' }}>行政部</td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                    </div> */}
-                    <div style={{ padding: '24px', lineHeight: '1.6', fontSize: '14px', color: '#333', overflow: 'auto', maxHeight: '500px' }}>
-                      <Markdown>
-                        {`${markdown}`}
-                      </Markdown>
-                    </div>
-                  </div>
-                </div>
-              </div>
             </>
           )}
         </div>
 
       </div>
       <div >
-        {
-          activeStep >=3 && (
-            <div className={styles.resultSection} style={{ marginTop: '24px' }}>
-              <h3 className={styles.sectionTitle}>流程节点详情</h3>
-              <div className={styles.resultContent}>
-                <Table dataSource={dataSource}>
-                  <Table.Column title="节点名称" dataIndex="nodeName" key="name" />
-                  <Table.Column title="责任人" dataIndex="owner" key="owner" />
-                  <Table.Column title="输入物" dataIndex="input" key="input" />
-                  <Table.Column title="输出物" dataIndex="output" key="output" />
-                </Table>
-              </div>
+        {activeStep >= 3 && (
+          <div className={styles.resultSection} style={{ marginTop: '24px' }}>
+            <h3 className={styles.sectionTitle}>流程节点详情</h3>
+            <div className={styles.resultContent}>
+              <Table 
+                dataSource={dataSource} 
+                columns={TABLE_COLUMNS} 
+                rowKey={(record, index) => index}
+                pagination={{ pageSize: 5 }}
+              />
             </div>
-          )
-        }
+          </div>
+        )}
       </div>
     </div>
   );

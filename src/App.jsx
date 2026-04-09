@@ -1,13 +1,29 @@
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
-import { Layout, Menu } from 'antd';
+import { Suspense, lazy } from 'react';
+import { Layout, Menu, Spin } from 'antd';
 import { HomeOutlined, FileTextOutlined, BarChartOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import './styles/App.scss';
-import Home from './pages/Home';
-import InternalDraft from './pages/InternalDraft';
-import FlowChart from './pages/FlowChart';
-import ComplianceReview from './pages/ComplianceReview';
+
+// 使用 React.lazy 进行路由懒加载
+const Home = lazy(() => import('./pages/Home'));
+const InternalDraft = lazy(() => import('./pages/InternalDraft'));
+const FlowChart = lazy(() => import('./pages/FlowChart'));
+const ComplianceReview = lazy(() => import('./pages/ComplianceReview'));
 
 const { Sider, Content } = Layout;
+
+// 加载占位组件
+const PageLoading = () => (
+  <div style={{ 
+    height: '100%', 
+    display: 'flex', 
+    justifyContent: 'center', 
+    alignItems: 'center',
+    background: '#f0f2f5' 
+  }}>
+    <Spin size="large" description="加载中..." />
+  </div>
+);
 
 function AppContent() {
   const navigate = useNavigate();
@@ -55,12 +71,14 @@ function AppContent() {
       </Sider>
       <Layout style={{ flex: 1, width: '100%' }}>
         <Content className="content">
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/internal-draft" element={<InternalDraft />} />
-            <Route path="/flow-chart" element={<FlowChart />} />
-            <Route path="/compliance-review" element={<ComplianceReview />} />
-          </Routes>
+          <Suspense fallback={<PageLoading />}>
+            <Routes>
+              <Route path="/" element={<Home />} />
+              <Route path="/internal-draft" element={<InternalDraft />} />
+              <Route path="/flow-chart" element={<FlowChart />} />
+              <Route path="/compliance-review" element={<ComplianceReview />} />
+            </Routes>
+          </Suspense>
         </Content>
       </Layout>
     </Layout>
@@ -69,7 +87,7 @@ function AppContent() {
 
 function App() {
   return (
-    <Router>
+    <Router basename="/beijing">
       <AppContent />
     </Router>
   );

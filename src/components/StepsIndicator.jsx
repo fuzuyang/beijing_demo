@@ -3,7 +3,7 @@ import { Steps, Spin } from 'antd';
 
 const { Step } = Steps;
 
-const StepsIndicator = ({ activeStep, steps = [] }) => {
+const StepsIndicator = React.memo(({ activeStep, steps = [] }) => {
   return (
     <div style={{ maxWidth: '800px', margin: '0 auto' }}>
       <Steps 
@@ -18,6 +18,6 @@ const StepsIndicator = ({ activeStep, steps = [] }) => {
       />
     </div>
   );
-};
+});
 
 export default StepsIndicator;

@@ -1,6 +1,6 @@
 import React from 'react';
 
-const TitleWithDescription = ({ title, description }) => {
+const TitleWithDescription = React.memo(({ title, description }) => {
   return (
     <div style={{
       marginBottom: '40px',
@@ -24,6 +24,6 @@ const TitleWithDescription = ({ title, description }) => {
       </p>
     </div>
   );
-};
+});
 
 export default TitleWithDescription;
