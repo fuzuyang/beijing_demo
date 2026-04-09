@@ -187,7 +187,7 @@ const InternalDraft = () => {
     }, 120000);
 
     try {
-      const response = await fetch("/upload/document", {
+      const response = await fetch("/api_beijing/upload/document", {
         method: "POST",
         body: formData,
         signal: abortControllerRef.current.signal,

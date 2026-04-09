@@ -82,7 +82,7 @@ const ComplianceReview = () => {
         console.log("发送的请求数据:", { message: inputText });
 
         // 使用fetch发送请求，处理SSE响应
-        const fetchResponse = await fetch("/api/v1/risk/evaluate", {
+        const fetchResponse = await fetch("/api_beijing/v1/risk/evaluate", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -112,7 +112,7 @@ const ComplianceReview = () => {
         }
 
         // 直接使用fetch发送multipart/form-data请求
-        const fetchResponse = await fetch("/api/v1/risk/evaluate", {
+        const fetchResponse = await fetch("/api_beijing/v1/risk/evaluate", {
           method: "POST",
           body: formData,
         });

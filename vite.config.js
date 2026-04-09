@@ -1,23 +1,20 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-// https://vite.dev/config/
 export default defineConfig({
+  base: "/beijing/", // 生产环境路径，与Nginx的location路径一致
   plugins: [react()],
   server: {
     port: 5174,
     strictPort: true,
     proxy: {
-      // 配置API代理，解决跨域问题
       "/api": {
-        target: "http://localhost:5050",
+        target: "http://localhost:5050", // 本地开发时的后端地址
         changeOrigin: true,
         secure: false,
-        rewrite: (path) => path,
       },
-      // 配置文档上传接口代理
-      "/upload/document": {
-        target: "http://localhost:5050",
+      "/api_beijing": {
+        target: "http://localhost:5050", // 本地开发时的后端地址
         changeOrigin: true,
         secure: false,
       },
