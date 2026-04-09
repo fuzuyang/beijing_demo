@@ -4,7 +4,13 @@ import TitleWithDescription from '../components/TitleWithDescription';
 import styles from '../styles/FlowChart.module.css';
 import { Upload, Button, message, Table, Card, Spin } from 'antd';
 import { UploadOutlined, LoadingOutlined } from '@ant-design/icons';
-import { ReactFlow, ReactFlowProvider, Background, Controls, useNodesState, useEdgesState, Handle, Position } from 'reactflow';
+// 使用 React.lazy 进一步分离重型组件
+const ReactFlow = lazy(() => import('reactflow').then(m => ({ default: m.ReactFlow })));
+const Background = lazy(() => import('reactflow').then(m => ({ default: m.Background })));
+const Controls = lazy(() => import('reactflow').then(m => ({ default: m.Controls })));
+const ReactFlowProvider = lazy(() => import('reactflow').then(m => ({ default: m.ReactFlowProvider })));
+
+import { useNodesState, useEdgesState, Handle, Position } from 'reactflow';
 // import Markdown from 'react-markdown'; // 改为懒加载
 import 'reactflow/dist/style.css';
 
@@ -174,22 +180,24 @@ const ResultSummary = memo(({ flowData, typeCount }) => (
 const FlowChartDisplay = memo(({ nodes, edges, onNodesChange, onEdgesChange }) => (
   <div className={styles.flowchartContainer} style={{ position: 'relative' }}>
     <div style={{ height: '500px', borderRadius: '8px', overflow: 'hidden' }}>
-      <ReactFlowProvider>
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          nodeTypes={nodeTypes}
-          fitView
-          onlyRenderVisibleElements={true}
-          translateExtent={[[-1000, -1000], [2000, 2000]]}
-          style={{ width: '100%', height: '100%' }}
-        >
-          <Background variant="dots" gap={16} size={1} />
-          <Controls />
-        </ReactFlow>
-      </ReactFlowProvider>
+      <Suspense fallback={<div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}><Spin description="流程图渲染中..." /></div>}>
+        <ReactFlowProvider>
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            nodeTypes={nodeTypes}
+            fitView
+            onlyRenderVisibleElements={true}
+            translateExtent={[[-1000, -1000], [2000, 2000]]}
+            style={{ width: '100%', height: '100%' }}
+          >
+            <Background variant="dots" gap={16} size={1} />
+            <Controls />
+          </ReactFlow>
+        </ReactFlowProvider>
+      </Suspense>
     </div>
     
     <div className={styles.legend}>
