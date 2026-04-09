@@ -105,7 +105,7 @@ const FlowChart = () => {
   useEffect(() => {
     if (uploadUrl) {
       // 调用后端接口获取流程图数据
-      fetch(`https://www.countmeout.top:3001/api/upload/file`,{
+      fetch(`https://www.countmeout.top:3001/api/mock/generateFile`,{
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -770,7 +770,7 @@ const FlowChart = () => {
               <h3 className={styles.sectionTitle}>流程节点详情</h3>
               <div className={styles.resultContent}>
                 <Table dataSource={dataSource}>
-                  <Table.Column title="节点明菜" dataIndex="nodeName" key="name" />
+                  <Table.Column title="节点名称" dataIndex="nodeName" key="name" />
                   <Table.Column title="责任人" dataIndex="owner" key="owner" />
                   <Table.Column title="输入物" dataIndex="input" key="input" />
                   <Table.Column title="输出物" dataIndex="output" key="output" />
