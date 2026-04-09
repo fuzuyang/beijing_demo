@@ -11,7 +11,7 @@ export const complianceApi = {
 
   // 文档上传与模板生成
   uploadDocument: (formData) =>
-    request("/api_beijing//upload/document", {
+    request("/api_beijing/upload/document", {
       method: "POST",
       data: formData,
       headers: {
