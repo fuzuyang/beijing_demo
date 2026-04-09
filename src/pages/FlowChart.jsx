@@ -105,7 +105,7 @@ const FlowChart = () => {
   useEffect(() => {
     if (uploadUrl) {
       // 调用后端接口获取流程图数据
-      fetch(`https://47.98.169.70:3001/api/mock/generateFile`,{
+      fetch(`https://www.countmeout.top:3001/api/upload/file`,{
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -312,7 +312,7 @@ const FlowChart = () => {
     // ===== //
     const formData = new FormData();
     formData.append('file', file);
-    fetch('https://47.98.169.70:3001/api/upload/file', {
+    fetch('https://www.countmeout.top:3001/api/upload/file', {
       method: 'POST',
       headers: {
       },
