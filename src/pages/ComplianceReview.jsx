@@ -9,6 +9,8 @@ import {
   Divider,
   Tag,
   Spin,
+  Checkbox,
+  Popconfirm,
 } from "antd";
 import {
   UploadOutlined,
@@ -24,6 +26,30 @@ import TitleWithDescription from "../components/TitleWithDescription";
 import { complianceApi } from "../services/complianceApi";
 
 const { TextArea } = Input;
+const KB_ALLOWED_EXTENSIONS = [".pdf", ".txt", ".md", ".docx"];
+
+const SOURCE_TRAIL_PATTERN =
+  /[\s,，。]*\u6765\u6e90\s*[:：]\s*(?:(?:kb|policy):\/\/[^\s)\]，。；;\n]+(?:\?[^\s)\]，。；;\n]*)?)\s*$/i;
+const SOURCE_EMPTY_SUFFIX_PATTERN = /[\s,，。]*\u6765\u6e90\s*[:：]\s*$/i;
+
+const stripInternalSourceRefs = (text) =>
+  String(text || "")
+    .replace(SOURCE_TRAIL_PATTERN, "")
+    .replace(SOURCE_EMPTY_SUFFIX_PATTERN, "")
+    .trim();
+
+const isAllowedKbFile = (fileName = "") => {
+  const lowerFileName = String(fileName).toLowerCase();
+  return KB_ALLOWED_EXTENSIONS.some((ext) => lowerFileName.endsWith(ext));
+};
+
+const sanitizeCitations = (citations) => {
+  if (!Array.isArray(citations)) return [];
+  return citations.map((citation) => ({
+    ...citation,
+    quote: stripInternalSourceRefs(citation?.quote || ""),
+  }));
+};
 
 const ComplianceReview = () => {
   const [inputText, setInputText] = useState("");
@@ -32,6 +58,11 @@ const ComplianceReview = () => {
   const [analysisResult, setAnalysisResult] = useState(null);
   const [consultationMode, setConsultationMode] = useState("text"); // 'text' or 'file'
   const [showQuickExamples, setShowQuickExamples] = useState(true);
+  const [isUploadingKb, setIsUploadingKb] = useState(false);
+  const [kbDocuments, setKbDocuments] = useState([]);
+  const [selectedKbDocumentIds, setSelectedKbDocumentIds] = useState([]);
+  const [isLoadingKbDocuments, setIsLoadingKbDocuments] = useState(false);
+  const [isDeletingKbDocuments, setIsDeletingKbDocuments] = useState(false);
   const [streamingText, setStreamingText] = useState(""); // 用于实时显示流式输出
   const [loadingStep, setLoadingStep] = useState(0); // 加载步骤：0-3
 
@@ -55,6 +86,91 @@ const ComplianceReview = () => {
     }
     return () => clearInterval(timer);
   }, [isAnalyzing, streamingText]);
+
+  const fetchKbDocuments = async ({ silent = false } = {}) => {
+    try {
+      setIsLoadingKbDocuments(true);
+      const response = await fetch("/api_beijing/v1/kb/documents", {
+        method: "GET",
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data?.success === false) {
+        throw new Error(data?.message || "获取内部制度文件列表失败");
+      }
+
+      const docs = Array.isArray(data?.data?.documents) ? data.data.documents : [];
+      setKbDocuments(docs);
+      setSelectedKbDocumentIds((prev) =>
+        prev.filter((id) => docs.some((doc) => Number(doc?.document_id) === Number(id))),
+      );
+    } catch (error) {
+      if (!silent) {
+        const msg = error instanceof Error ? error.message : "获取内部制度文件列表失败";
+        message.error(msg);
+      }
+    } finally {
+      setIsLoadingKbDocuments(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchKbDocuments({ silent: true });
+  }, []);
+
+  const toggleKbDocumentSelection = (documentId, checked) => {
+    const docId = Number(documentId);
+    if (!docId) return;
+    setSelectedKbDocumentIds((prev) => {
+      const exists = prev.includes(docId);
+      if (checked && !exists) return [...prev, docId];
+      if (!checked && exists) return prev.filter((id) => id !== docId);
+      return prev;
+    });
+  };
+
+  const deleteSelectedKbDocuments = async () => {
+    if (!selectedKbDocumentIds.length) {
+      message.warning("请先选择要删除的制度文件");
+      return;
+    }
+
+    try {
+      setIsDeletingKbDocuments(true);
+      const response = await fetch("/api_beijing/v1/kb/documents/delete", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          document_ids: selectedKbDocumentIds,
+          sync_vector: true,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data?.success === false) {
+        throw new Error(data?.message || "删除制度文件失败");
+      }
+
+      const deletedIds = Array.isArray(data?.data?.deleted_document_ids)
+        ? data.data.deleted_document_ids.map((id) => Number(id))
+        : [];
+      if (deletedIds.length) {
+        setSelectedKbDocumentIds((prev) => prev.filter((id) => !deletedIds.includes(id)));
+      }
+
+      if (data?.data?.vector_sync_requested && !data?.data?.vector_sync_ok) {
+        message.warning(data?.message || "删除成功，但向量索引同步失败");
+      } else {
+        message.success(data?.message || "删除成功");
+      }
+      await fetchKbDocuments({ silent: true });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "删除制度文件失败";
+      message.error(msg);
+    } finally {
+      setIsDeletingKbDocuments(false);
+    }
+  };
 
   // 实际API调用进行合规分析
   const analyzeCompliance = async () => {
@@ -223,7 +339,9 @@ const ComplianceReview = () => {
                     requiredDocuments: [],
                     gaps: [],
                     markdown: resultData.data?.answer || "",
-                    citations: resultData.data?.citations || [],
+                    citations: sanitizeCitations(
+                      resultData.data?.citations || [],
+                    ),
                   };
 
                   console.log("构建的分析结果:", result);
@@ -270,6 +388,45 @@ const ComplianceReview = () => {
   // 处理快速示例点击
   const handleExampleClick = (example) => {
     setInputText(example);
+  };
+
+  const beforeKbUpload = (file) => {
+    if (!isAllowedKbFile(file?.name)) {
+      message.error("仅支持 PDF、TXT、MD、DOCX 格式文件");
+      return Upload.LIST_IGNORE;
+    }
+    return true;
+  };
+
+  const uploadInternalPolicy = async ({ file, onSuccess, onError }) => {
+    try {
+      setIsUploadingKb(true);
+
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("sync_vector", "1");
+
+      const response = await fetch("/api_beijing/v1/kb/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data?.success === false) {
+        throw new Error(data?.message || "上传失败");
+      }
+
+      message.success(data?.message || "内部制度文件上传成功");
+      await fetchKbDocuments({ silent: true });
+      if (onSuccess) onSuccess(data, file);
+    } catch (error) {
+      const msg =
+        error instanceof Error ? error.message : "内部制度文件上传失败";
+      message.error(msg);
+      if (onError) onError(error);
+    } finally {
+      setIsUploadingKb(false);
+    }
   };
 
   // 处理文件上传
@@ -352,6 +509,118 @@ const ComplianceReview = () => {
                 上传文件
               </Button>
             </Space>
+
+            <div style={{ marginBottom: "16px" }}>
+              <Upload
+                showUploadList={false}
+                accept={KB_ALLOWED_EXTENSIONS.join(",")}
+                beforeUpload={beforeKbUpload}
+                customRequest={uploadInternalPolicy}
+              >
+                <Button
+                  icon={<UploadOutlined />}
+                  loading={isUploadingKb}
+                  disabled={isUploadingKb}
+                >
+                  上传内部制度文件
+                </Button>
+              </Upload>
+            </div>
+
+            <div
+              style={{
+                marginBottom: "16px",
+                padding: "12px",
+                border: "1px solid #e8e8e8",
+                borderRadius: "6px",
+                backgroundColor: "#fff",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  marginBottom: "10px",
+                  gap: "8px",
+                }}
+              >
+                <span style={{ fontSize: "13px", fontWeight: 600 }}>已上传内部制度文件</span>
+                <Space size={8}>
+                  <Button
+                    size="small"
+                    onClick={() => fetchKbDocuments()}
+                    loading={isLoadingKbDocuments}
+                  >
+                    刷新
+                  </Button>
+                  <Popconfirm
+                    title="确认删除选中的内部制度文件吗？"
+                    okText="确认"
+                    cancelText="取消"
+                    disabled={!selectedKbDocumentIds.length || isDeletingKbDocuments}
+                    onConfirm={deleteSelectedKbDocuments}
+                  >
+                    <Button
+                      danger
+                      size="small"
+                      loading={isDeletingKbDocuments}
+                      disabled={!selectedKbDocumentIds.length || isDeletingKbDocuments}
+                    >
+                      删除选中
+                    </Button>
+                  </Popconfirm>
+                </Space>
+              </div>
+
+              <div
+                style={{
+                  maxHeight: "180px",
+                  overflowY: "auto",
+                  borderTop: "1px solid #f0f0f0",
+                  paddingTop: "8px",
+                }}
+              >
+                {isLoadingKbDocuments ? (
+                  <div style={{ textAlign: "center", padding: "12px 0" }}>
+                    <Spin size="small" />
+                  </div>
+                ) : kbDocuments.length ? (
+                  kbDocuments.map((doc) => {
+                    const documentId = Number(doc?.document_id);
+                    return (
+                      <label
+                        key={documentId}
+                        style={{
+                          display: "flex",
+                          alignItems: "flex-start",
+                          gap: "8px",
+                          padding: "6px 0",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <Checkbox
+                          checked={selectedKbDocumentIds.includes(documentId)}
+                          onChange={(e) =>
+                            toggleKbDocumentSelection(documentId, e?.target?.checked)
+                          }
+                        />
+                        <span style={{ fontSize: "12px", color: "#333", lineHeight: 1.5 }}>
+                          {doc?.file_name || doc?.document_title || `文档#${documentId}`}
+                          <span style={{ color: "#999", marginLeft: "6px" }}>
+                            ({doc?.chunk_count ?? 0} 段)
+                          </span>
+                        </span>
+                      </label>
+                    );
+                  })
+                ) : (
+                  <div style={{ fontSize: "12px", color: "#999", padding: "6px 0" }}>
+                    暂无已上传制度文件
+                  </div>
+                )}
+              </div>
+            </div>
 
             {consultationMode === "file" && (
               <>
@@ -538,20 +807,25 @@ const ComplianceReview = () => {
                     typeof analysisResult.citations === "object" &&
                     analysisResult.citations.length > 0 ? (
                       Object.values(analysisResult.citations).map(
-                        (citation, index) => (
-                          <p
-                            key={index}
-                            style={{
-                              marginBottom: "12px",
-                              wordBreak: "break-word",
-                            }}
-                          >
-                            <strong>[{index + 1}]</strong>{" "}
-                            {citation.source_title} {citation.section_title}{" "}
-                            {citation.subsection_title}，{citation.quote}
-                            ，来源：{citation.source_ref}
-                          </p>
-                        ),
+                        (citation, index) => {
+                          const cleanQuote = stripInternalSourceRefs(
+                            citation.quote || "",
+                          );
+                          return (
+                            <p
+                              key={index}
+                              style={{
+                                marginBottom: "12px",
+                                wordBreak: "break-word",
+                                whiteSpace: "pre-wrap",
+                              }}
+                            >
+                              <strong>[{index + 1}]</strong>{" "}
+                              {citation.source_title} {citation.section_title}{" "}
+                              {citation.subsection_title}，{cleanQuote}
+                            </p>
+                          );
+                        },
                       )
                     ) : (
                       <p style={{ color: "#999" }}>暂无引用</p>
