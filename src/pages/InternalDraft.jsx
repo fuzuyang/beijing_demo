@@ -27,13 +27,22 @@ const InternalDraft = () => {
   // 处理文件选择
   const handleFileChange = useCallback((e) => {
     const files = Array.from(e.target.files);
-    // 只保留 PDF 文件
-    const pdfFiles = files.filter((file) => file.type === "application/pdf");
-    if (pdfFiles.length !== files.length) {
-      setErrorMessage("仅支持 PDF 格式文件");
+    // 支持 PDF、Word 和 TXT 文件
+    const allowedFiles = files.filter((file) => {
+      const fileName = file.name.toLowerCase();
+      return (
+        file.type === "application/pdf" ||
+        fileName.endsWith(".pdf") ||
+        fileName.endsWith(".doc") ||
+        fileName.endsWith(".docx") ||
+        fileName.endsWith(".txt")
+      );
+    });
+    if (allowedFiles.length !== files.length) {
+      setErrorMessage("仅支持 PDF、Word(.doc/.docx)、TXT 格式文件");
       setTimeout(() => setErrorMessage(""), 3000);
     }
-    setLeftFiles((prev) => [...prev, ...pdfFiles]);
+    setLeftFiles((prev) => [...prev, ...allowedFiles]);
   }, []);
 
   // 删除文件
@@ -49,12 +58,21 @@ const InternalDraft = () => {
   const handleDrop = useCallback((e) => {
     e.preventDefault();
     const files = Array.from(e.dataTransfer.files);
-    const pdfFiles = files.filter((file) => file.type === "application/pdf");
-    if (pdfFiles.length !== files.length) {
-      setErrorMessage("仅支持 PDF 格式文件");
+    const allowedFiles = files.filter((file) => {
+      const fileName = file.name.toLowerCase();
+      return (
+        file.type === "application/pdf" ||
+        fileName.endsWith(".pdf") ||
+        fileName.endsWith(".doc") ||
+        fileName.endsWith(".docx") ||
+        fileName.endsWith(".txt")
+      );
+    });
+    if (allowedFiles.length !== files.length) {
+      setErrorMessage("仅支持 PDF、Word(.doc/.docx)、TXT 格式文件");
       setTimeout(() => setErrorMessage(""), 3000);
     }
-    setLeftFiles((prev) => [...prev, ...pdfFiles]);
+    setLeftFiles((prev) => [...prev, ...allowedFiles]);
   }, []);
 
   // 处理 SSE 流式响应
@@ -293,7 +311,7 @@ const InternalDraft = () => {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".pdf"
+                accept=".pdf,.doc,.docx,.txt"
                 multiple
                 style={{ display: "none" }}
                 onChange={handleFileChange}
@@ -311,7 +329,9 @@ const InternalDraft = () => {
                 </svg>
               </div>
               <p className={styles.uploadText}>点击上传或拖拽文件到此处</p>
-              <p className={styles.uploadHint}>仅支持 PDF 格式</p>
+              <p className={styles.uploadHint}>
+                支持 PDF、Word(.doc/.docx)、TXT 格式
+              </p>
             </div>
 
             {leftFiles.length > 0 && (
