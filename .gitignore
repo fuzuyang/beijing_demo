@@ -24,5 +24,4 @@ dist-ssr
 *.sw?
 
 # Deployment
-deploy.js
 dist.zip
