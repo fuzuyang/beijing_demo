@@ -23,7 +23,6 @@ import {
 } from "@ant-design/icons";
 import styles from "../styles/ComplianceReview.module.css";
 import TitleWithDescription from "../components/TitleWithDescription";
-import { complianceApi } from "../services/complianceApi";
 
 const { TextArea } = Input;
 const KB_ALLOWED_EXTENSIONS = [".pdf", ".txt", ".md", ".docx"];
